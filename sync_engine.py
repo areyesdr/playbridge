@@ -219,6 +219,12 @@ class SyncEngine:
             sch["enabled"] = setting_get(f"sched_enabled:{uid}", "0") == "1"
             sch["hours"] = int(setting_get(f"sched_hours:{uid}", "24"))
             sch["last_run"] = setting_get(f"sched_last_run:{uid}")
+            # el registro vive en memoria del proceso: si el worker se
+            # reinicia (redeploy/sleep de Render), se restaura desde la DB
+            try:
+                self.states[uid]["log"] = json.loads(setting_get(f"log:{uid}") or "[]")
+            except Exception:
+                pass
             if DEMO:
                 self._seed_demo(uid)
         return self.states[uid]
@@ -229,6 +235,7 @@ class SyncEngine:
         with self.lock:
             s["log"].append(line)
             s["log"] = s["log"][-300:]
+            setting_set(f"log:{uid}", json.dumps(s["log"]))
 
     def snapshot(self, uid):
         s = self.st(uid)
@@ -286,12 +293,13 @@ class SyncEngine:
                         else:
                             s["yt_ok"] = False
                     except Exception as e:
-                        if "invalid argument" in str(e).lower():
-                            # error 400 intermitente conocido de Google en OAuth:
-                            # no marcar como expirado, mantener el estado previo
-                            s["yt_ok"] = setting_get(f"yt_ok:{uid}") == "1"
-                        else:
+                        if self._is_definite_auth_error(e):
                             s["yt_ok"] = False
+                        else:
+                            # error transitorio/desconocido (ej. 400 "invalid
+                            # argument" intermitente vía OAuth): no marcar como
+                            # expirado, mantener el estado previo
+                            s["yt_ok"] = setting_get(f"yt_ok:{uid}") == "1"
                     setting_set(f"yt_check:{uid}", str(now))
                     setting_set(f"yt_ok:{uid}", "1" if s["yt_ok"] else "0")
                 s["yt_state"] = "ok" if s["yt_ok"] else "expired"
@@ -453,14 +461,13 @@ class SyncEngine:
             return True
         except Exception as e:
             msg = str(e)
-            if "invalid argument" in msg.lower():
-                # bug intermitente conocido de ytmusicapi/Google en endpoints
-                # de tipo "browse" vía OAuth: el token recién obtenido suele
-                # ser válido igual, así que no se bloquea la conexión por esto.
-                self.log(uid, "YT Music: la verificación de cuenta falló con un error "
-                               "intermitente conocido de Google (400 invalid argument), "
-                               "pero el inicio de sesión se guardó. Si la sincronización "
-                               "falla después, reconecta de nuevo.", "warn")
+            if not self._is_definite_auth_error(e):
+                # error transitorio/desconocido (ej. 400 "invalid argument"
+                # intermitente vía OAuth): el token recién obtenido suele ser
+                # válido igual, así que no se bloquea la conexión por esto.
+                self.log(uid, f"YT Music: verificación de cuenta falló con un error "
+                               f"transitorio ({msg}), pero el inicio de sesión se "
+                               "guardó. Si la sincronización falla después, reconecta.", "warn")
                 self.st(uid)["yt_ok"] = True
                 setting_set(f"yt_ok:{uid}", "1")
                 return True
@@ -771,6 +778,14 @@ class SyncEngine:
         return any(k in msg for k in
                     ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials",
                      "invalid argument", "Invalid argument"))
+
+    @staticmethod
+    def _is_definite_auth_error(e):
+        """Errores que indican sin ambigüedad credenciales inválidas/expiradas
+        (a diferencia del 400 "invalid argument" intermitente de Google)."""
+        msg = str(e)
+        return any(k in msg for k in
+                    ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials"))
 
     def _search_yt(self, uid, track):
         if DEMO:
