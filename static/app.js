@@ -272,7 +272,7 @@ async function startYtOauth() {
       } else if (r.error && !r.pending) {
         clearInterval(ytPollTimer);
         $("yt-oauth-status").textContent = "error: " + r.error;
-        toast(r.error, "error", 6000);
+        toast(r.error, "error", 10000);
       }
     } catch (e) { /* red intermitente: seguir intentando */ }
   }, 4000);

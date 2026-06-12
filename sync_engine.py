@@ -421,7 +421,16 @@ class SyncEngine:
         setting_set(f"yt_auth:{uid}", json.dumps(token))
         setting_set(f"yt_device:{uid}", "")
         self.yt_clients.pop(uid, None)
-        return {"ok": self.connect_yt(uid)}
+        if self.connect_yt(uid):
+            return {"ok": True}
+        # autorización de Google completada, pero la validación falló:
+        # devolver el motivo en vez de "Flujo no iniciado" en el siguiente poll
+        last_err = ""
+        for entry in reversed(self.st(uid)["log"]):
+            if entry["level"] == "error" and "YT Music" in entry["msg"]:
+                last_err = entry["msg"]
+                break
+        return {"ok": False, "error": last_err or "No se pudo validar la cuenta de YT Music"}
 
     def connect_yt(self, uid):
         if DEMO:
