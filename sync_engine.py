@@ -872,6 +872,20 @@ class SyncEngine:
             self.log(uid, f"  ⚠ Lote de {len(video_ids)} falló ({e}), reintentando individual…", "warn")
             return self._add_individual_retry(uid, yt_id, video_ids)
 
+        # YT Music a veces no ejecuta la acción y en su lugar devuelve un
+        # diálogo de confirmación ("One or more of the tracks are already in
+        # your playlist", STATUS_FAILED) en vez de aplicar dedupeOption. Lo
+        # reenviamos con la opción "Skip duplicates" (DEDUPE_OPTION_DROP_DUPLICATE),
+        # que añade lo nuevo y omite lo que ya estaba — el resultado que
+        # duplicates=False debía dar desde un principio.
+        if isinstance(resp, dict) and resp.get("status") == "STATUS_FAILED":
+            retry_body = self._extract_dedupe_skip(resp)
+            if retry_body:
+                resp = self.yt(uid)._send_request("browse/edit_playlist", retry_body)
+                if isinstance(resp, dict) and "SUCCEEDED" in resp.get("status", ""):
+                    self.log(uid, f"  + {len(video_ids)} añadidas/ya presentes en la playlist de YT Music", "ok")
+                    return [True] * len(video_ids), [None] * len(video_ids)
+
         if isinstance(resp, dict) and "SUCCEEDED" in resp.get("status", ""):
             results = resp.get("playlistEditResults", [])
             ok, reasons = [], []
@@ -889,6 +903,19 @@ class SyncEngine:
 
         self.log(uid, f"  ⚠ Respuesta inesperada al añadir lote ({resp}), reintentando individual…", "warn")
         return self._add_individual_retry(uid, yt_id, video_ids)
+
+    @staticmethod
+    def _extract_dedupe_skip(resp):
+        """Si resp es el diálogo de confirmación de duplicados de YT Music,
+        devuelve el cuerpo de la petición equivalente a su botón
+        "Skip duplicates" (omite los videos ya presentes y añade el resto).
+        None si resp no tiene esa forma."""
+        try:
+            dialog = resp["actions"][0]["confirmDialogEndpoint"]["content"]["confirmDialogRenderer"]
+            cmd = dialog["cancelButton"]["buttonRenderer"]["command"]["playlistEditEndpoint"]
+            return {"playlistId": cmd["playlistId"], "actions": cmd["actions"]}
+        except (KeyError, IndexError, TypeError):
+            return None
 
     def _add_individual_retry(self, uid, yt_id, video_ids):
         """Reintenta añadir video_ids uno por uno. Devuelve (ok, reasons)
