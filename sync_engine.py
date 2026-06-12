@@ -653,6 +653,16 @@ class SyncEngine:
                          ORDER BY artists""", (uid, sp_playlist_id))
             return [dict(r) for r in c.fetchall()]
 
+    def reset_playlist(self, uid, sp_playlist_id):
+        """Olvida el progreso de una playlist (y su yt_id) para forzar una
+        resincronización completa desde cero."""
+        with db() as c:
+            c.execute("DELETE FROM tracks WHERE uid=%s AND sp_playlist_id=%s",
+                      (uid, sp_playlist_id))
+            c.execute("""UPDATE playlists SET synced=0, missing=0, yt_id=NULL,
+                         last_sync=NULL WHERE uid=%s AND sp_id=%s""",
+                      (uid, sp_playlist_id))
+
     # ------------------------------------------------ sync core
     def start_sync(self, uid, playlist_ids):
         s = self.st(uid)
@@ -719,7 +729,34 @@ class SyncEngine:
                       f"· {len(todo)} pendientes")
 
         yt_id = pl["yt_id"] or self._create_yt_playlist(uid, name)
-        added_ids = []
+        batch = []  # tracks con videoId encontrado, pendientes de añadir a YT
+
+        def flush_batch():
+            if not batch:
+                return
+            ok = self._add_to_yt(uid, yt_id, [b["vid"] for b in batch])
+            with db() as c:
+                for b in batch:
+                    status = "synced" if ok else "missing"
+                    c.execute("""INSERT INTO tracks(uid,sp_track_id,sp_playlist_id,name,
+                                 artists,yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s,%s)
+                                 ON CONFLICT(uid,sp_track_id,sp_playlist_id) DO UPDATE SET
+                                 yt_video_id=EXCLUDED.yt_video_id, status=EXCLUDED.status""",
+                              (uid, b["t"]["sp_track_id"], sp_playlist_id, b["t"]["name"],
+                               b["t"]["artists"], b["vid"] if ok else None, status))
+            with self.lock:
+                for b in batch:
+                    if ok:
+                        s["found"] += 1
+                    else:
+                        s["missing"] += 1
+                    s["done"] += 1
+            for b in batch:
+                if ok:
+                    self.log(uid, f"  ✓ {b['label']}", "ok")
+                else:
+                    self.log(uid, f"  ✗ no se pudo añadir a YT Music: {b['label']}", "warn")
+            batch.clear()
 
         for t in todo:
             label = f"{t['artists']} — {t['name']}"
@@ -727,35 +764,26 @@ class SyncEngine:
                 s["current"] = label
             vid = self._search_yt(uid, t)
             if vid:
-                added_ids.append(vid)
-                status = "synced"
-                with self.lock:
-                    s["found"] += 1
-                self.log(uid, f"  ✓ {label}", "ok")
+                batch.append({"t": t, "vid": vid, "label": label})
             else:
-                vid = None
-                status = "missing"
+                with db() as c:
+                    c.execute("""INSERT INTO tracks(uid,sp_track_id,sp_playlist_id,name,
+                                 artists,yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s,%s)
+                                 ON CONFLICT(uid,sp_track_id,sp_playlist_id) DO UPDATE SET
+                                 yt_video_id=EXCLUDED.yt_video_id, status=EXCLUDED.status""",
+                              (uid, t["sp_track_id"], sp_playlist_id, t["name"],
+                               t["artists"], None, "missing"))
                 with self.lock:
                     s["missing"] += 1
+                    s["done"] += 1
                 self.log(uid, f"  ✗ No encontrada: {label}", "warn")
-            with db() as c:
-                c.execute("""INSERT INTO tracks(uid,sp_track_id,sp_playlist_id,name,
-                             artists,yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s,%s)
-                             ON CONFLICT(uid,sp_track_id,sp_playlist_id) DO UPDATE SET
-                             yt_video_id=EXCLUDED.yt_video_id, status=EXCLUDED.status""",
-                          (uid, t["sp_track_id"], sp_playlist_id, t["name"],
-                           t["artists"], vid, status))
-            with self.lock:
-                s["done"] += 1
             # lote de 25 para no saturar la API
-            if len(added_ids) >= 25:
-                self._add_to_yt(uid, yt_id, added_ids)
-                added_ids = []
+            if len(batch) >= 25:
+                flush_batch()
             if not DEMO:
                 time.sleep(0.25)
 
-        if added_ids:
-            self._add_to_yt(uid, yt_id, added_ids)
+        flush_batch()
         self._update_counts(uid, sp_playlist_id, len(tracks), yt_id)
 
     def _update_counts(self, uid, sp_playlist_id, total, yt_id=None):
@@ -830,14 +858,16 @@ class SyncEngine:
 
     def _add_to_yt(self, uid, yt_id, video_ids):
         if DEMO:
-            return
+            return True
         try:
             self.yt(uid).add_playlist_items(yt_id, video_ids, duplicates=False)
             self.log(uid, f"  + {len(video_ids)} añadidas a la playlist de YT Music", "ok")
+            return True
         except Exception as e:
             if self._is_auth_error(e):
                 raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
             self.log(uid, f"  error añadiendo lote de {len(video_ids)}: {e}", "error")
+            return False
 
     # ------------------------------------------------ scheduler (por usuario)
     def set_scheduler(self, uid, enabled, hours):

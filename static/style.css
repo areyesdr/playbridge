@@ -126,6 +126,8 @@ h2{font:700 15px var(--disp);letter-spacing:.03em}
 .empty{color:var(--muted);padding:18px 6px;font-size:13px}
 .badge{font-size:11px;border-radius:99px;padding:2px 9px;border:1px solid var(--line)}
 .badge.ok{color:var(--sp);border-color:var(--sp)}
+button.badge{background:transparent;font-family:var(--mono);cursor:pointer}
+button.badge:hover{background:var(--sp);color:var(--bg)}
 .pl-filter{
   background:var(--bg);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:8px 12px;font:12px var(--mono);min-width:160px;

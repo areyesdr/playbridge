@@ -116,6 +116,19 @@ def api_missing(pl_id):
     return jsonify(engine.missing_tracks(uid(), pl_id))
 
 
+@app.route("/api/resync/<pl_id>", methods=["POST"])
+def api_resync(pl_id):
+    u = uid()
+    if not DEMO:
+        if not engine.sp(u):
+            return jsonify({"error": "Conecta Spotify primero (botón Spotify)"}), 400
+        if setting_get(f"yt_ok:{u}") != "1":
+            return jsonify({"error": "Conecta YouTube Music primero"}), 400
+    engine.reset_playlist(u, pl_id)
+    started = engine.start_sync(u, [pl_id])
+    return jsonify({"started": started})
+
+
 @app.route("/api/scheduler", methods=["POST"])
 def api_scheduler():
     data = request.get_json(force=True)

@@ -195,7 +195,7 @@ function renderPlaylists() {
       <span class="name">${esc(p.name)}</span>
       <span class="bar-mini"><i style="width:${pct}%"></i></span>
       <span class="meta">${p.synced}/${p.total} · ${pct}%</span>
-      ${synced ? '<span class="badge ok">✓ sincronizada</span>' : ""}
+      ${synced ? `<button class="badge ok" onclick="resyncPlaylist('${p.sp_id}','${esc(p.name)}')" title="Forzar resincronización completa">✓ sincronizada ↻</button>` : ""}
       ${p.missing ? `<button class="miss-link" onclick="showMissing('${p.sp_id}','${esc(p.name)}')">${p.missing} no encontradas</button>` : ""}
       <span class="meta">${p.last_sync ? "⏱ " + p.last_sync.replace("T", " ") : ""}</span>
     </div>`;
@@ -226,6 +226,14 @@ async function syncSelected() {
   })).json();
   if (res.error) toast(res.error, "error");
   else if (res.started) toast("Sincronización iniciada", "ok");
+  else toast("Ya hay una sincronización en curso", "warn");
+}
+
+async function resyncPlaylist(id, name) {
+  if (!confirm(`¿Forzar resincronización completa de «${name}»?\n\nSe borrará el progreso guardado y se volverá a crear/llenar la playlist en YT Music desde cero.`)) return;
+  const res = await (await fetch("/api/resync/" + id, { method: "POST" })).json();
+  if (res.error) toast(res.error, "error");
+  else if (res.started) toast("Resincronización iniciada", "ok");
   else toast("Ya hay una sincronización en curso", "warn");
 }
 
