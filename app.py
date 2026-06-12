@@ -87,7 +87,9 @@ def api_playlists():
     try:
         if refresh:
             if not (DEMO or engine.sp(u)):
-                return jsonify({"error": "Conecta Spotify primero"}), 400
+                # token inexistente bajo esta sesión: reflejarlo en el chip
+                engine.st(u)["spotify_ok"] = False
+                return jsonify({"error": "Conecta Spotify primero (botón Spotify)"}), 400
             return jsonify(engine.refresh_playlists(u))
         return jsonify(engine.playlists_view(u))
     except Exception as e:
@@ -101,7 +103,8 @@ def api_sync():
     ids = data.get("playlist_ids", "all")
     if not DEMO:
         if not engine.sp(u):
-            return jsonify({"error": "Conecta Spotify primero"}), 400
+            engine.st(u)["spotify_ok"] = False
+            return jsonify({"error": "Conecta Spotify primero (botón Spotify)"}), 400
         if setting_get(f"yt_ok:{u}") != "1":
             return jsonify({"error": "Conecta YouTube Music primero"}), 400
     started = engine.start_sync(u, ids)

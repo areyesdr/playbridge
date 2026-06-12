@@ -111,7 +111,8 @@ async function showMissing(id, name) {
 
 /* ───────────────────────── conexiones / config */
 function connectSpotify() {
-  if ($("chip-sp").classList.contains("ok")) return;
+  // siempre permite (re)autorizar: si ya estaba autorizada, Spotify
+  // redirige de vuelta al instante sin pedir nada
   window.location = "/spotify/login";
 }
 
