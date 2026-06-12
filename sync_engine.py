@@ -188,7 +188,7 @@ def _default_state():
         "done": 0, "total": 0, "found": 0, "missing": 0,
         "log": [], "spotify_ok": DEMO, "yt_ok": DEMO,
         "spotify_state": "off", "spotify_user": None,
-        "yt_state": "off", "yt_method": None,
+        "yt_state": "off", "yt_method": None, "yt_user": None,
         "scheduler": {"enabled": False, "hours": 24, "last_run": None},
     }
 
@@ -268,6 +268,7 @@ class SyncEngine:
             s["yt_ok"] = True
             s["yt_state"] = "ok"
             s["yt_method"] = "oauth"
+            s["yt_user"] = "Demo User"
         else:
             method = self._yt_auth_method(uid)
             if method:
@@ -277,8 +278,11 @@ class SyncEngine:
                     try:
                         client = self.yt(uid)
                         if client:
-                            client.get_library_playlists(limit=1)
+                            info = client.get_account_info()
                             s["yt_ok"] = True
+                            name = info.get("accountName")
+                            if name:
+                                setting_set(f"yt_user:{uid}", name)
                         else:
                             s["yt_ok"] = False
                     except Exception:
@@ -287,10 +291,12 @@ class SyncEngine:
                     setting_set(f"yt_ok:{uid}", "1" if s["yt_ok"] else "0")
                 s["yt_state"] = "ok" if s["yt_ok"] else "expired"
                 s["yt_method"] = method
+                s["yt_user"] = setting_get(f"yt_user:{uid}")
             else:
                 s["yt_ok"] = False
                 s["yt_state"] = "off"
                 s["yt_method"] = None
+                s["yt_user"] = None
 
         with self.lock:
             return json.loads(json.dumps(s))
@@ -424,12 +430,21 @@ class SyncEngine:
             client = self.yt(uid)
             if client is None:
                 return False
-            client.get_library_playlists(limit=1)  # valida headers
+            info = client.get_account_info()  # valida la sesión
+            name = info.get("accountName")
+            if name:
+                setting_set(f"yt_user:{uid}", name)
             self.st(uid)["yt_ok"] = True
             setting_set(f"yt_ok:{uid}", "1")
             return True
         except Exception as e:
-            self.log(uid, f"YT Music: {e}", "error")
+            msg = str(e)
+            if "invalid argument" in msg.lower():
+                self.log(uid, "YT Music: la cuenta de Google no tiene YouTube Music "
+                               "inicializado. Abre music.youtube.com con esa cuenta, "
+                               "acepta los términos y vuelve a conectar.", "error")
+            else:
+                self.log(uid, f"YT Music: {msg}", "error")
             self.st(uid)["yt_ok"] = False
             setting_set(f"yt_ok:{uid}", "0")
             self.yt_clients.pop(uid, None)
@@ -724,7 +739,8 @@ class SyncEngine:
     def _is_auth_error(e):
         msg = str(e)
         return any(k in msg for k in
-                    ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials"))
+                    ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials",
+                     "invalid argument", "Invalid argument"))
 
     def _search_yt(self, uid, track):
         if DEMO:

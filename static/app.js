@@ -120,7 +120,7 @@ async function poll() {
     const s = await (await fetch("/api/status")).json();
 
     setPill("sp", s.spotify_state, s.spotify_user);
-    setPill("yt", s.yt_state, s.yt_method === "oauth" ? "Google" : s.yt_method === "headers" ? "Navegador" : null);
+    setPill("yt", s.yt_state, s.yt_user || (s.yt_method === "oauth" ? "Google" : s.yt_method === "headers" ? "Navegador" : null));
     updateOnboard(s.spotify_state, s.yt_state);
     lastSpState = s.spotify_state;
     lastYtState = s.yt_state;
