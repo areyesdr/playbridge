@@ -358,46 +358,80 @@ class SyncEngine:
 
     def setup_yt_headers(self, uid, headers_raw):
         """Crea el auth de YT Music desde headers pegados por el usuario.
-        Tolera cualquier formato de pegado: 'nombre: valor', nombre y valor en
-        líneas separadas, o todo aplanado en una sola línea sin colones."""
+        Tolera el formato de Chrome 'Copiar headers de solicitud' (HTTP/2
+        incluido), headers planos, o formato aplanado en una línea."""
         import ytmusicapi
         path = self._yt_path(uid)
+
+        # ── limpiar: quitar pseudo-headers HTTP/2 (:authority, :method…), ──
+        #    normalizar líneas, quedarse solo con lo esencial
         raw = headers_raw.strip()
+        # si está aplanado en una línea, insertar saltos de línea
         if "\n" not in raw:
             raw = re.sub(r"\s+(?=[A-Za-z0-9-]+:\s)", "\n", raw)
+        # filtrar pseudo-headers y líneas vacías
+        lines = [l for l in raw.split("\n") if l.strip() and not l.startswith(":")]
+        # normalizar el authorization: Chrome copia varios SAPISIDHASH/PASH;
+        # ytmusicapi espera solo "SAPISIDHASH <hash>" (se regenera en cada req)
+        clean = []
+        for l in lines:
+            if l.lower().startswith("authorization"):
+                m = re.search(r"(SAPISIDHASH\s+\S+)", l)
+                if m:
+                    clean.append(f"authorization: {m.group(1)}")
+                # si no encuentra SAPISIDHASH, descarta la línea
+            else:
+                clean.append(l)
+        raw = "\n".join(clean)
+
         try:
             ytmusicapi.setup(filepath=path, headers_raw=raw)
         except Exception:
-            # rescate: extraer cookie y authuser directo del texto, venga como venga
+            # ── rescate manual: extraer cookie, authuser, user-agent ──
+            # buscar la cookie más larga que contenga SAPISID
             m_cookie = re.search(
                 r"((?:[\w.~\-]+=[^;\s]+;\s*){3,}[\w.~\-]+=[^;\s]+)", headers_raw)
             if not (m_cookie and "SAPISID" in m_cookie.group(1)):
                 raise
             m_user = re.search(r"x-goog-authuser\D*(\d+)", headers_raw, re.I)
             m_ua = re.search(r"(Mozilla/5\.0[^\n]*?Safari/[\d.]+)", headers_raw)
-            m_auth = re.search(r"(SAPISIDHASH \S+)", headers_raw)
-            # mismo formato que escribe ytmusicapi.setup (claves en minúsculas);
-            # el hash de authorization se regenera por request desde la cookie
+            m_auth = re.search(r"(SAPISIDHASH\s+\S+)", headers_raw)
             cfg = {
                 "accept": "*/*",
                 "accept-encoding": "gzip, deflate",
-                "accept-language": "en-US,en;q=0.5",
-                "authorization": m_auth.group(1) if m_auth else "SAPISIDHASH regenerated",
+                "accept-language": "es-419,es;q=0.9",
+                "authorization": m_auth.group(1) if m_auth else "SAPISIDHASH 0",
                 "content-type": "application/json",
                 "cookie": m_cookie.group(1).strip(),
                 "origin": "https://music.youtube.com",
                 "user-agent": m_ua.group(1) if m_ua else
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
                 "x-goog-authuser": m_user.group(1) if m_user else "0",
                 "x-origin": "https://music.youtube.com",
             }
             with open(path, "w") as f:
                 json.dump(cfg, f)
+
         with open(path) as f:
             setting_set(f"yt_auth:{uid}", f.read())
         self.yt_clients.pop(uid, None)  # forzar recarga con headers nuevos
-        return self.connect_yt(uid)
+        ok = self.connect_yt(uid)
+        if not ok:
+            # leer el último error que connect_yt() dejó en el log
+            last_err = ""
+            for entry in reversed(self.st(uid)["log"]):
+                if entry["level"] == "error" and "YT Music" in entry["msg"]:
+                    last_err = entry["msg"]
+                    break
+            raise Exception(
+                f"YT Music rechazó la autenticación.\n{last_err}\n\n"
+                "Posibles causas:\n"
+                "• Cookie expirada — recarga music.youtube.com y copia headers FRESCOS\n"
+                "• La cuenta no tiene YouTube Music disponible\n"
+                "• Intenta con otro navegador o perfil de Chrome"
+            )
+        return True
 
     # ------------------------------------------------ datos Spotify
     def fetch_playlists(self, uid):
