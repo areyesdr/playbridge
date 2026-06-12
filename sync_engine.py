@@ -358,8 +358,10 @@ class SyncEngine:
         while results["next"]:
             results = sp.next(results)
             items.extend(results["items"])
-        return [{"sp_id": p["id"], "name": p["name"], "total": p["tracks"]["total"]}
-                for p in items if p]
+        # algunas playlists (p.ej. generadas por Spotify) vienen sin "tracks"
+        return [{"sp_id": p["id"], "name": p["name"],
+                 "total": (p.get("tracks") or {}).get("total", 0)}
+                for p in items if p and p.get("id")]
 
     def fetch_tracks(self, uid, sp_playlist_id):
         if DEMO:
