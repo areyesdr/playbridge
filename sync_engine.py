@@ -610,6 +610,9 @@ class SyncEngine:
             detail = (f"sin objeto track: {skip_no_track}, locales: {skip_local}, "
                       f"sin id: {skip_no_id}, sin artistas: {skip_no_artists}")
             self.log(uid, f"  ⚠ 0 canciones migrables de {len(items)} ítems ({detail})", "warn")
+            if skip_no_track == len(items):
+                sample = json.dumps(items[0])[:400]
+                self.log(uid, f"  🔍 muestra del primer ítem: {sample}", "warn")
         else:
             self.log(uid, "  ⚠ La playlist está vacía en Spotify", "warn")
         return out
