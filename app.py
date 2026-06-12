@@ -148,9 +148,9 @@ def api_config():
 @app.route("/api/yt/oauth/start", methods=["POST"])
 def api_yt_oauth_start():
     if not engine.yt_oauth_creds():
-        return jsonify({"error": "Login con Google no configurado. El administrador debe "
-                                 "definir YT_CLIENT_ID y YT_CLIENT_SECRET (o ⚙ Config). "
-                                 "Mientras tanto usa la opción de headers."}), 400
+        return jsonify({"error": "Google OAuth no configurado. El administrador debe definir "
+                                 "YT_CLIENT_ID y YT_CLIENT_SECRET en ⚙ Config o variables de entorno. "
+                                 "Mientras tanto usa la opción de headers del navegador."}), 400
     try:
         return jsonify(engine.yt_oauth_start(uid()))
     except Exception as e:

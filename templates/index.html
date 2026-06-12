@@ -95,7 +95,20 @@
   <h3>Conectar YouTube Music</h3>
 
   <div class="yt-option">
-    <p class="muted">Inicia sesión con tu cuenta de Google — sin copiar nada raro.</p>
+    <p class="muted">Método más simple: pega los headers de tu navegador.</p>
+    <ol class="steps">
+      <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
+      <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
+      <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
+      <li>Pégalos aquí:</li>
+    </ol>
+    <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+    <button class="btn primary" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
+  </div>
+
+  <details class="yt-advanced">
+    <summary class="muted">Login con Google (requiere configurar Google Cloud)</summary>
+    <p style="font-size:12px;margin:10px 0">Si el admin configuró Google OAuth, inicia sesión con un clic:</p>
     <button class="btn primary" id="btn-yt-oauth" onclick="startYtOauth()">
       Iniciar sesión con Google
     </button>
@@ -104,20 +117,6 @@
       <p>2 · Ingresa este código:</p>
       <div class="device-code" id="yt-oauth-code">····-····</div>
       <p class="muted" id="yt-oauth-status">esperando autorización…</p>
-    </div>
-  </div>
-
-  <details class="yt-advanced">
-    <summary class="muted">Opción avanzada — pegar headers del navegador</summary>
-    <ol class="steps">
-      <li>Abre <b>music.youtube.com</b> con sesión iniciada</li>
-      <li>F12 → pestaña <b>Red</b> → filtra <code>/browse</code></li>
-      <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
-      <li>Pégalos aquí:</li>
-    </ol>
-    <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
-    <div class="dialog-actions">
-      <button class="btn primary" onclick="saveYtHeaders()">Guardar y conectar</button>
     </div>
   </details>
 
