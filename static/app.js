@@ -1,6 +1,9 @@
 /* PlayBridge — frontend */
 const $ = (id) => document.getElementById(id);
 let lastLogLen = 0;
+let allLogEntries = [];
+let logFilter = "all";
+let lastYtWasOk = false;
 const LOG_KEY = "playbridge_log";
 
 /* ── tabs ─────────────────────────────── */
@@ -10,12 +13,24 @@ function switchTab(name) {
 }
 
 /* ── log persistido en localStorage ───── */
+function setLogFilter(lvl) {
+  logFilter = lvl;
+  document.querySelectorAll("#log-filters .lf").forEach((b) =>
+    b.classList.toggle("active", b.dataset.lvl === lvl));
+  logRender(allLogEntries);
+}
+
 function logRender(entries) {
-  const html = entries.length
-    ? entries.map((l) => `<div class="${l.level}"><span class="t">${l.t}</span>${esc(l.msg)}</div>`).join("")
-    : '<div class="empty muted">Esperando actividad…</div>';
+  allLogEntries = entries;
+  const filtered = logFilter === "all" ? entries : entries.filter((l) => l.level === logFilter);
+  const html = filtered.length
+    ? filtered.map((l) => `<div class="${l.level}"><span class="t">${l.t}</span>${esc(l.msg)}</div>`).join("")
+    : '<div class="empty muted">Sin actividad para este filtro…</div>';
   $("log").innerHTML = html;
   $("log").scrollTop = $("log").scrollHeight;
+  $("log-meta").textContent = entries.length
+    ? `${filtered.length} de ${entries.length} líneas`
+    : "Esperando actividad…";
 }
 
 function logSave(entries) {
@@ -28,6 +43,14 @@ function clearLog() {
     try { localStorage.removeItem(LOG_KEY); } catch (e) {}
     logRender([]);
   }
+}
+
+function copyLog() {
+  const text = allLogEntries.map((l) => `[${l.t}] ${l.msg}`).join("\n");
+  if (!text) { toast("No hay registro para copiar", "warn"); return; }
+  navigator.clipboard?.writeText(text)
+    .then(() => toast("Registro copiado ✓", "ok"))
+    .catch(() => toast("No se pudo copiar", "error"));
 }
 
 // restaurar log al cargar la página
@@ -60,13 +83,54 @@ function toast(msg, type = "info", ms = 3800) {
   }, ms);
 }
 
+/* ───────────────────────── cuentas (pills de 3 estados) */
+let lastSpState = null, lastYtState = null;
+
+function setPill(kind, state, sub) {
+  const pill = $("pill-" + kind);
+  pill.classList.remove("state-off", "state-ok", "state-expired");
+  pill.classList.add("state-" + state);
+  const subEl = $("pill-" + kind + "-sub");
+  if (state === "ok") subEl.textContent = sub ? "· " + sub : "· conectado";
+  else if (state === "expired") subEl.textContent = "· reconectar";
+  else subEl.textContent = "";
+}
+
+function onPillClick(kind) {
+  if (kind === "sp") {
+    if (lastSpState === "ok") openPanel("sp");
+    else connectSpotify();
+  } else {
+    openPanel("yt");
+  }
+}
+
+function updateOnboard(spState, ytState) {
+  const spOk = spState === "ok", ytOk = ytState === "ok";
+  $("ob-sp").classList.toggle("done", spOk);
+  $("ob-yt").classList.toggle("done", ytOk);
+  $("ob-sp").querySelector(".ob-num").textContent = spOk ? "✓" : "1";
+  $("ob-yt").querySelector(".ob-num").textContent = ytOk ? "✓" : "2";
+  $("onboard").style.display = (spOk && ytOk) ? "none" : "flex";
+}
+
 /* ───────────────────────── estado (polling cada 1.5s) */
 async function poll() {
   try {
     const s = await (await fetch("/api/status")).json();
 
-    $("chip-sp").classList.toggle("ok", s.spotify_ok);
-    $("chip-yt").classList.toggle("ok", s.yt_ok);
+    setPill("sp", s.spotify_state, s.spotify_user);
+    setPill("yt", s.yt_state, s.yt_method === "oauth" ? "Google" : s.yt_method === "headers" ? "Navegador" : null);
+    updateOnboard(s.spotify_state, s.yt_state);
+    lastSpState = s.spotify_state;
+    lastYtState = s.yt_state;
+    $("sp-account-info").textContent = s.spotify_user
+      ? `Conectado como ${s.spotify_user}` : "Sin información de cuenta.";
+
+    if (s.yt_state === "expired" && lastYtWasOk) {
+      toast("La sesión de YT Music expiró. Reconéctala.", "warn", 6000);
+    }
+    lastYtWasOk = s.yt_state === "ok";
 
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
     $("beam-fill").style.width = (s.running ? Math.max(pct, 3) : pct) + "%";
@@ -99,24 +163,63 @@ async function poll() {
 }
 
 /* ───────────────────────── playlists */
+let allPlaylists = [];
+
 async function loadPlaylists(refresh) {
   const res = await fetch("/api/playlists" + (refresh ? "?refresh=1" : ""));
   const data = await res.json();
   if (data.error) { toast(data.error, "error"); return; }
-  const t = $("pl-table");
   if (refresh) toast(`${data.length} playlists cargadas de Spotify`, "ok");
-  if (!data.length) { t.innerHTML = `<div class="empty">Sin playlists. Conecta Spotify y refresca.</div>`; return; }
+  allPlaylists = data;
+  renderPlaylists();
+}
+
+function renderPlaylists() {
+  const t = $("pl-table");
+  const filter = $("pl-filter").value.trim().toLowerCase();
+  const data = filter
+    ? allPlaylists.filter((p) => p.name.toLowerCase().includes(filter))
+    : allPlaylists;
+
+  if (!allPlaylists.length) {
+    $("pl-table-head").style.display = "none";
+    t.innerHTML = `<div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>`;
+    return;
+  }
+  $("pl-table-head").style.display = "flex";
+  $("pl-count").textContent = filter ? `${data.length} de ${allPlaylists.length}` : `${allPlaylists.length} playlists`;
+
+  if (!data.length) {
+    t.innerHTML = `<div class="empty">Sin resultados para «${esc(filter)}».</div>`;
+    return;
+  }
   t.innerHTML = data.map((p) => {
     const pct = p.total ? Math.round((p.synced / p.total) * 100) : 0;
+    const synced = p.synced >= p.total && p.total > 0;
     return `<div class="row">
       <input type="checkbox" class="pl-check" value="${p.sp_id}">
       <span class="name">${esc(p.name)}</span>
       <span class="bar-mini"><i style="width:${pct}%"></i></span>
       <span class="meta">${p.synced}/${p.total} · ${pct}%</span>
+      ${synced ? '<span class="badge ok">✓ sincronizada</span>' : ""}
       ${p.missing ? `<button class="miss-link" onclick="showMissing('${p.sp_id}','${esc(p.name)}')">${p.missing} no encontradas</button>` : ""}
       <span class="meta">${p.last_sync ? "⏱ " + p.last_sync.replace("T", " ") : ""}</span>
     </div>`;
   }).join("");
+  syncSelectAllState();
+}
+
+function toggleAll() {
+  const checked = $("pl-select-all").checked;
+  document.querySelectorAll(".pl-check").forEach((c) => { c.checked = checked; });
+}
+
+function syncSelectAllState() {
+  document.querySelectorAll(".pl-check").forEach((c) =>
+    c.addEventListener("change", () => {
+      const all = [...document.querySelectorAll(".pl-check")];
+      $("pl-select-all").checked = all.length > 0 && all.every((x) => x.checked);
+    }));
 }
 
 async function syncSelected() {

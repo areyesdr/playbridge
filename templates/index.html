@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 
@@ -20,15 +20,39 @@
     <span class="sub">spotify → youtube music {% if demo %}· <b class="demo-tag">DEMO</b>{% endif %}</span>
   </div>
   <div class="chips">
-    <button class="chip" id="chip-sp" onclick="connectSpotify()">
-      <i class="dot"></i> Spotify
+    <button class="acct-pill state-off" id="pill-sp" onclick="onPillClick('sp')">
+      <i class="dot"></i>
+      <span class="pill-label">Spotify</span>
+      <span class="pill-sub" id="pill-sp-sub"></span>
     </button>
-    <button class="chip" id="chip-yt" onclick="openPanel('yt')">
-      <i class="dot"></i> YT Music
+    <button class="acct-pill state-off" id="pill-yt" onclick="onPillClick('yt')">
+      <i class="dot"></i>
+      <span class="pill-label">YT Music</span>
+      <span class="pill-sub" id="pill-yt-sub"></span>
     </button>
-    <button class="chip ghost" onclick="openPanel('cfg')">⚙ Config</button>
+    <button class="chip ghost" onclick="openPanel('cfg')" title="Configuración (admin)">⚙</button>
   </div>
 </header>
+
+<!-- ───────────────────────────── onboarding -->
+<section class="onboard" id="onboard">
+  <div class="onboard-step" id="ob-sp">
+    <span class="ob-num">1</span>
+    <div class="ob-text">
+      <strong>Conecta tu cuenta de Spotify</strong>
+      <span class="muted">Autoriza el acceso de lectura a tus playlists</span>
+    </div>
+    <button class="btn primary" onclick="connectSpotify()">Conectar</button>
+  </div>
+  <div class="onboard-step" id="ob-yt">
+    <span class="ob-num">2</span>
+    <div class="ob-text">
+      <strong>Conecta YouTube Music</strong>
+      <span class="muted">Con tu cuenta de Google — gratis, sin tarjeta</span>
+    </div>
+    <button class="btn primary" onclick="openPanel('yt')">Conectar</button>
+  </div>
+</section>
 
 <!-- ───────────────────────────── beam de transferencia (firma) -->
 <section class="beam-wrap" id="beam">
@@ -59,9 +83,16 @@
   <div class="panel-head">
     <h2>Playlists</h2>
     <div class="actions">
+      <input type="text" id="pl-filter" class="pl-filter" placeholder="🔎 Filtrar por nombre…" oninput="renderPlaylists()">
       <button class="btn ghost" onclick="loadPlaylists(true)">↻ Refrescar de Spotify</button>
       <button class="btn primary" id="btn-sync" onclick="syncSelected()">Sincronizar seleccionadas</button>
     </div>
+  </div>
+  <div class="pl-table-head" id="pl-table-head" style="display:none">
+    <label class="select-all">
+      <input type="checkbox" id="pl-select-all" onchange="toggleAll()"> Seleccionar todo
+    </label>
+    <span class="muted" id="pl-count"></span>
   </div>
   <div class="table" id="pl-table">
     <div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>
@@ -95,8 +126,18 @@
   <section class="panel">
     <div class="panel-head">
       <h2>Registro</h2>
-      <button class="btn ghost" onclick="clearLog()">🗑 Limpiar</button>
+      <div class="actions">
+        <div class="log-filters" id="log-filters">
+          <button class="lf active" data-lvl="all" onclick="setLogFilter('all')">Todos</button>
+          <button class="lf" data-lvl="ok" onclick="setLogFilter('ok')">✓ OK</button>
+          <button class="lf" data-lvl="warn" onclick="setLogFilter('warn')">⚠ Avisos</button>
+          <button class="lf" data-lvl="error" onclick="setLogFilter('error')">✗ Errores</button>
+        </div>
+        <button class="btn ghost" onclick="copyLog()">⧉ Copiar</button>
+        <button class="btn ghost" onclick="clearLog()">🗑 Limpiar</button>
+      </div>
     </div>
+    <div class="log-meta muted" id="log-meta"></div>
     <div class="log-full" id="log"></div>
   </section>
 </section>
@@ -104,35 +145,47 @@
 <!-- ───────────────────────────── panel conectar YT Music -->
 <dialog id="panel-yt">
   <h3>Conectar YouTube Music</h3>
+  <p class="muted">Inicia sesión con tu cuenta de Google: es gratis, no caduca y se
+    refresca sola. No requiere tarjeta ni planes de pago.</p>
 
-  <div class="yt-option">
-    <p class="muted">Método más simple: pega los headers de tu navegador.</p>
-    <ol class="steps">
-      <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
-      <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
-      <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
-      <li>Pégalos aquí:</li>
-    </ol>
-    <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
-    <button class="btn primary" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
+  <button class="btn primary btn-google" id="btn-yt-oauth" onclick="startYtOauth()">
+    <span class="g-icon">G</span> Iniciar sesión con Google
+  </button>
+
+  <div id="yt-oauth-box" style="display:none">
+    <p>1 · Abre <a id="yt-oauth-link" href="#" target="_blank" rel="noopener">google.com/device</a></p>
+    <p>2 · Ingresa este código:</p>
+    <div class="device-code" id="yt-oauth-code">····-····</div>
+    <p class="muted" id="yt-oauth-status">esperando autorización…</p>
   </div>
 
   <details class="yt-advanced">
-    <summary class="muted">Login con Google (requiere configurar Google Cloud)</summary>
-    <p style="font-size:12px;margin:10px 0">Si el admin configuró Google OAuth, inicia sesión con un clic:</p>
-    <button class="btn primary" id="btn-yt-oauth" onclick="startYtOauth()">
-      Iniciar sesión con Google
-    </button>
-    <div id="yt-oauth-box" style="display:none">
-      <p>1 · Abre <a id="yt-oauth-link" href="#" target="_blank" rel="noopener">google.com/device</a></p>
-      <p>2 · Ingresa este código:</p>
-      <div class="device-code" id="yt-oauth-code">····-····</div>
-      <p class="muted" id="yt-oauth-status">esperando autorización…</p>
+    <summary class="muted">Método avanzado (sin Google) — headers del navegador</summary>
+    <div class="yt-option">
+      <p class="muted">Caducan en minutos: úsalo solo si el login con Google no es una opción.</p>
+      <ol class="steps">
+        <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
+        <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
+        <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
+        <li>Pégalos aquí:</li>
+      </ol>
+      <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+      <button class="btn ghost" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
     </div>
   </details>
 
   <div class="dialog-actions">
     <button class="btn ghost" onclick="closePanel('yt')">Cerrar</button>
+  </div>
+</dialog>
+
+<!-- ───────────────────────────── panel cuenta Spotify -->
+<dialog id="panel-sp">
+  <h3>Cuenta de Spotify</h3>
+  <p class="muted" id="sp-account-info">—</p>
+  <div class="dialog-actions">
+    <button class="btn ghost" onclick="closePanel('sp')">Cerrar</button>
+    <button class="btn primary" onclick="connectSpotify()">Reconectar</button>
   </div>
 </dialog>
 
@@ -143,7 +196,7 @@
   <label>Spotify Client ID <input type="text" id="cfg-id"></label>
   <label>Spotify Client Secret <input type="password" id="cfg-secret" placeholder="(sin cambios)"></label>
   <label>Redirect URI <input type="text" id="cfg-redirect"></label>
-  <p class="muted" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada.</p>
+  <p class="muted" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada. Gratis, sin facturación.</p>
   <label>Google Client ID <input type="text" id="cfg-yt-id"></label>
   <label>Google Client Secret <input type="password" id="cfg-yt-secret" placeholder="(sin cambios)"></label>
   <div class="dialog-actions">
@@ -161,6 +214,6 @@
   </div>
 </dialog>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

@@ -187,8 +187,14 @@ def _default_state():
         "running": False, "playlist": None, "current": None,
         "done": 0, "total": 0, "found": 0, "missing": 0,
         "log": [], "spotify_ok": DEMO, "yt_ok": DEMO,
+        "spotify_state": "off", "spotify_user": None,
+        "yt_state": "off", "yt_method": None,
         "scheduler": {"enabled": False, "hours": 24, "last_run": None},
     }
+
+
+class YTAuthError(Exception):
+    """La sesión de YT Music no es válida (token/headers expirados)."""
 
 
 # ---------------------------------------------------------------- Engine
@@ -226,25 +232,66 @@ class SyncEngine:
 
     def snapshot(self, uid):
         s = self.st(uid)
-        # flags perezosos: validar cada ~30s que el token siga vivo
         now = time.time()
-        if s["spotify_ok"]:
+
+        # ---- Spotify: estado + datos de la cuenta conectada ----
+        if DEMO:
+            s["spotify_ok"] = True
+            s["spotify_state"] = "ok"
+            s["spotify_user"] = "Demo User"
+        elif setting_get(f"sp_token:{uid}"):
+            # token presente: validar cada ~30s que siga vivo
             last_check = setting_get(f"sp_check:{uid}")
             if not last_check or now - float(last_check) > 30:
                 try:
                     sp = self.sp(uid)
-                    if sp:
-                        sp.current_user()
+                    me = sp.current_user() if sp else None
+                    if me:
                         s["spotify_ok"] = True
+                        s["spotify_user"] = me.get("display_name") or me.get("id")
+                        setting_set(f"sp_user:{uid}", s["spotify_user"])
                     else:
                         s["spotify_ok"] = False
                 except Exception:
                     s["spotify_ok"] = False
                 setting_set(f"sp_check:{uid}", str(now))
+            if not s.get("spotify_user"):
+                s["spotify_user"] = setting_get(f"sp_user:{uid}")
+            s["spotify_state"] = "ok" if s["spotify_ok"] else "expired"
         else:
-            s["spotify_ok"] = DEMO or bool(setting_get(f"sp_token:{uid}"))
-        if not s["yt_ok"]:
-            s["yt_ok"] = DEMO or setting_get(f"yt_ok:{uid}") == "1"
+            s["spotify_ok"] = False
+            s["spotify_state"] = "off"
+            s["spotify_user"] = None
+
+        # ---- YT Music: estado + método de autenticación ----
+        if DEMO:
+            s["yt_ok"] = True
+            s["yt_state"] = "ok"
+            s["yt_method"] = "oauth"
+        else:
+            method = self._yt_auth_method(uid)
+            if method:
+                # auth presente: validar cada ~60s que siga viva
+                last_check = setting_get(f"yt_check:{uid}")
+                if not last_check or now - float(last_check) > 60:
+                    try:
+                        client = self.yt(uid)
+                        if client:
+                            client.get_library_playlists(limit=1)
+                            s["yt_ok"] = True
+                        else:
+                            s["yt_ok"] = False
+                    except Exception:
+                        s["yt_ok"] = False
+                    setting_set(f"yt_check:{uid}", str(now))
+                    setting_set(f"yt_ok:{uid}", "1" if s["yt_ok"] else "0")
+                s["yt_state"] = "ok" if s["yt_ok"] else "expired"
+                s["yt_method"] = method
+            else:
+                s["yt_ok"] = False
+                s["yt_state"] = "off"
+                s["yt_method"] = None
+
         with self.lock:
             return json.loads(json.dumps(s))
 
@@ -286,6 +333,24 @@ class SyncEngine:
     # ------------------------------------------------ auth YT Music
     def _yt_path(self, uid):
         return os.path.join(BASE_DIR, f"browser_{uid}.json")
+
+    def _yt_auth_method(self, uid):
+        """'oauth' (login con Google), 'headers' (navegador) o None si no hay auth."""
+        raw = setting_get(f"yt_auth:{uid}")
+        if raw is None:
+            path = self._yt_path(uid)
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        raw = f.read()
+                except Exception:
+                    return None
+        if not raw:
+            return None
+        try:
+            return "oauth" if "refresh_token" in json.loads(raw) else "headers"
+        except Exception:
+            return None
 
     def yt(self, uid):
         if uid in self.yt_clients:
@@ -477,14 +542,24 @@ class SyncEngine:
         out = []
         for it in items:
             t = it.get("track")
-            if not t or not t.get("id"):
+            if not t or not t.get("id") or t.get("is_local"):
+                continue
+            artists = t.get("artists")
+            if not artists:
+                # episodios de podcast u otros items sin artistas: no migrables
                 continue
             out.append({
                 "sp_track_id": t["id"],
                 "name": t["name"],
-                "artists": ", ".join(a["name"] for a in t["artists"]),
+                "artists": ", ".join(a["name"] for a in artists),
             })
-        self.log(uid, f"  {len(out)} canciones obtenidas de Spotify", "info")
+        if out:
+            self.log(uid, f"  {len(out)} canciones obtenidas de Spotify ({len(items)} ítems totales)", "info")
+        elif items:
+            self.log(uid, f"  ⚠ 0 canciones migrables de {len(items)} ítems "
+                          "(¿solo episodios de podcast o pistas locales?)", "warn")
+        else:
+            self.log(uid, "  ⚠ La playlist está vacía en Spotify", "warn")
         return out
 
     def refresh_playlists(self, uid):
@@ -529,6 +604,12 @@ class SyncEngine:
             for pid in playlist_ids:
                 self._sync_one(uid, pid)
             self.log(uid, "Sincronización completada", "ok")
+        except YTAuthError as e:
+            self.log(uid, f"⚠ {e}. Reconecta YouTube Music y vuelve a sincronizar.", "error")
+            setting_set(f"yt_check:{uid}", "0")  # forzar re-validación inmediata del estado
+            setting_set(f"yt_ok:{uid}", "0")
+            with self.lock:
+                s["yt_ok"] = False
         except Exception as e:
             self.log(uid, f"Error fatal: {e}", "error")
         finally:
@@ -561,9 +642,13 @@ class SyncEngine:
             s.update(playlist=name, total=len(todo), done=0, found=0, missing=0)
 
         if not todo:
-            self.log(uid, f"  Sin cambios ({len(tracks)} ya sincronizadas)")
+            if tracks:
+                self.log(uid, f"  Sin cambios ({len(tracks)} ya sincronizadas)")
             self._update_counts(uid, sp_playlist_id, len(tracks))
             return
+
+        self.log(uid, f"  {len(tracks)} canciones totales · {len(done_ids)} ya sincronizadas "
+                      f"· {len(todo)} pendientes")
 
         yt_id = pl["yt_id"] or self._create_yt_playlist(uid, name)
         added_ids = []
@@ -625,19 +710,38 @@ class SyncEngine:
     def _create_yt_playlist(self, uid, name):
         if DEMO:
             return f"DEMO_{name}"
-        return self.yt(uid).create_playlist(name, description="Sincronizada desde Spotify")
+        client = self.yt(uid)
+        if client is None:
+            raise YTAuthError("YT Music no está conectado")
+        try:
+            return client.create_playlist(name, description="Sincronizada desde Spotify")
+        except Exception as e:
+            if self._is_auth_error(e):
+                raise YTAuthError(f"sesión de YT Music expirada al crear la playlist: {e}")
+            raise
+
+    @staticmethod
+    def _is_auth_error(e):
+        msg = str(e)
+        return any(k in msg for k in
+                    ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials"))
 
     def _search_yt(self, uid, track):
         if DEMO:
             time.sleep(0.08)
             return None if hash(track["sp_track_id"]) % 9 == 0 else "demo_vid"
+        client = self.yt(uid)
+        if client is None:
+            raise YTAuthError("YT Music no está conectado")
         try:
             q = f"{track['artists']} {track['name']}"
-            res = self.yt(uid).search(q, filter="songs", limit=3)
+            res = client.search(q, filter="songs", limit=3)
             for r in res:
                 if r.get("videoId"):
                     return r["videoId"]
         except Exception as e:
+            if self._is_auth_error(e):
+                raise YTAuthError(f"sesión de YT Music expirada: {e}")
             self.log(uid, f"  búsqueda falló: {e}", "error")
         return None
 
@@ -646,8 +750,11 @@ class SyncEngine:
             return
         try:
             self.yt(uid).add_playlist_items(yt_id, video_ids, duplicates=False)
+            self.log(uid, f"  + {len(video_ids)} añadidas a la playlist de YT Music", "ok")
         except Exception as e:
-            self.log(uid, f"  error añadiendo lote: {e}", "error")
+            if self._is_auth_error(e):
+                raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
+            self.log(uid, f"  error añadiendo lote de {len(video_ids)}: {e}", "error")
 
     # ------------------------------------------------ scheduler (por usuario)
     def set_scheduler(self, uid, enabled, hours):
