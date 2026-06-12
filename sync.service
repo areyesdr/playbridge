@@ -1,0 +1,14 @@
+# /etc/systemd/system/sync-console.service — opcional, arranque automático en Debian
+[Unit]
+Description=Spotify to YT Music Sync Console
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/spotify-yt-sync
+ExecStart=/opt/spotify-yt-sync/venv/bin/python3 app.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

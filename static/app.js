@@ -1,0 +1,142 @@
+/* PlayBridge — frontend */
+const $ = (id) => document.getElementById(id);
+let lastLogLen = 0;
+
+/* PWA: registrar service worker (scope raíz) */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+/* ───────────────────────── estado (polling cada 1.5s) */
+async function poll() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+
+    $("chip-sp").classList.toggle("ok", s.spotify_ok);
+    $("chip-yt").classList.toggle("ok", s.yt_ok);
+
+    const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+    $("beam-fill").style.width = (s.running ? Math.max(pct, 3) : pct) + "%";
+    $("beam").classList.toggle("active", s.running);
+    $("ticker").textContent = s.running
+      ? "▸ " + (s.current || "preparando…")
+      : "— inactivo —";
+    $("beam-playlist").textContent = s.playlist || "";
+    $("beam-count").textContent = s.total ? `${s.done}/${s.total}` : "";
+    $("stat-found").textContent = `${s.found} ✓`;
+    $("stat-missing").textContent = `${s.missing} ✗`;
+    $("btn-sync").disabled = s.running;
+
+    // log incremental
+    if (s.log.length !== lastLogLen) {
+      $("log").innerHTML = s.log
+        .map((l) => `<div class="${l.level}"><span class="t">${l.t}</span>${esc(l.msg)}</div>`)
+        .join("");
+      $("log").scrollTop = $("log").scrollHeight;
+      lastLogLen = s.log.length;
+      if (!s.running) loadPlaylists(false); // refrescar contadores al terminar
+    }
+
+    // scheduler
+    $("sched-on").checked = s.scheduler.enabled;
+    if (document.activeElement !== $("sched-hours"))
+      $("sched-hours").value = s.scheduler.hours;
+    $("sched-last").textContent = s.scheduler.last_run
+      ? "última: " + s.scheduler.last_run.replace("T", " ") : "";
+  } catch (e) { /* servidor reiniciando */ }
+  setTimeout(poll, 1500);
+}
+
+/* ───────────────────────── playlists */
+async function loadPlaylists(refresh) {
+  const res = await fetch("/api/playlists" + (refresh ? "?refresh=1" : ""));
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  const t = $("pl-table");
+  if (!data.length) { t.innerHTML = `<div class="empty">Sin playlists. Conecta Spotify y refresca.</div>`; return; }
+  t.innerHTML = data.map((p) => {
+    const pct = p.total ? Math.round((p.synced / p.total) * 100) : 0;
+    return `<div class="row">
+      <input type="checkbox" class="pl-check" value="${p.sp_id}">
+      <span class="name">${esc(p.name)}</span>
+      <span class="bar-mini"><i style="width:${pct}%"></i></span>
+      <span class="meta">${p.synced}/${p.total} · ${pct}%</span>
+      ${p.missing ? `<button class="miss-link" onclick="showMissing('${p.sp_id}','${esc(p.name)}')">${p.missing} no encontradas</button>` : ""}
+      <span class="meta">${p.last_sync ? "⏱ " + p.last_sync.replace("T", " ") : ""}</span>
+    </div>`;
+  }).join("");
+}
+
+async function syncSelected() {
+  const ids = [...document.querySelectorAll(".pl-check:checked")].map((c) => c.value);
+  const body = { playlist_ids: ids.length ? ids : "all" };
+  if (!ids.length && !confirm("¿Sincronizar TODAS las playlists?")) return;
+  const res = await (await fetch("/api/sync", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })).json();
+  if (res.error) alert(res.error);
+}
+
+async function showMissing(id, name) {
+  const list = await (await fetch("/api/missing/" + id)).json();
+  $("missing-title").textContent = `No encontradas — ${name}`;
+  $("missing-list").innerHTML = list
+    .map((t) => `<div class="warn">✗ ${esc(t.artists)} — ${esc(t.name)}</div>`).join("")
+    || `<div class="ok">Nada pendiente ✓</div>`;
+  openPanel("missing");
+}
+
+/* ───────────────────────── conexiones / config */
+function connectSpotify() {
+  if ($("chip-sp").classList.contains("ok")) return;
+  window.location = "/spotify/login";
+}
+
+async function saveYtHeaders() {
+  const res = await (await fetch("/api/yt/setup", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ headers: $("yt-headers").value }),
+  })).json();
+  if (res.ok) { closePanel("yt"); }
+  else alert("Headers inválidos: " + (res.error || "revisa el formato"));
+}
+
+async function saveConfig() {
+  await fetch("/api/config", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sp_client_id: $("cfg-id").value,
+      sp_client_secret: $("cfg-secret").value,
+      sp_redirect: $("cfg-redirect").value,
+    }),
+  });
+  closePanel("cfg");
+}
+
+async function loadConfig() {
+  const c = await (await fetch("/api/config")).json();
+  $("cfg-id").value = c.sp_client_id;
+  $("cfg-redirect").value = c.sp_redirect;
+}
+
+async function saveScheduler() {
+  await fetch("/api/scheduler", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      enabled: $("sched-on").checked,
+      hours: parseInt($("sched-hours").value || "24", 10),
+    }),
+  });
+}
+
+/* ───────────────────────── helpers */
+function openPanel(n) { if (n === "cfg") loadConfig(); $("panel-" + n).showModal(); }
+function closePanel(n) { $("panel-" + n).close(); }
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (m) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
+loadPlaylists(false);
+poll();

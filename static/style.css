@@ -1,0 +1,145 @@
+/* PlayBridge — tokens */
+:root{
+  --bg:#0B0E13;
+  --panel:#131820;
+  --line:#232B36;
+  --ink:#E8EDF2;
+  --muted:#7C8794;
+  --sp:#1DB954;
+  --yt:#FF5147;
+  --beam:linear-gradient(90deg,#1DB954,#FF5147);
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --disp:'Space Grotesk',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font:14px/1.5 var(--mono);
+  padding:20px;max-width:1080px;margin:0 auto;
+}
+
+/* ── header ─────────────────────────── */
+header{display:flex;justify-content:space-between;align-items:flex-end;
+  flex-wrap:wrap;gap:12px;margin-bottom:24px}
+h1{font:700 26px var(--disp);letter-spacing:.04em}
+.sub{color:var(--muted);font-size:12px}
+.demo-tag{color:var(--yt)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{
+  display:flex;align-items:center;gap:7px;
+  background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  font:500 12px var(--mono);padding:7px 14px;border-radius:99px;cursor:pointer;
+}
+.chip:hover{border-color:var(--muted)}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.chip.ok .dot{background:var(--sp);box-shadow:0 0 8px var(--sp)}
+.chip.ghost{color:var(--muted)}
+
+/* ── beam (firma) ───────────────────── */
+.beam-wrap{
+  display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:22px 24px;margin-bottom:18px;
+}
+.node{display:flex;flex-direction:column;gap:2px;min-width:84px}
+.node-label{font-size:10px;letter-spacing:.18em;color:var(--muted)}
+.node-name{font:700 16px var(--disp)}
+.node.sp .node-name{color:var(--sp)}
+.node.yt .node-name{color:var(--yt)}
+.node-stat{font-size:12px;color:var(--sp)}
+.node-stat.warn{color:var(--yt)}
+.beam-track{display:flex;flex-direction:column;gap:6px}
+.beam-bar{height:10px;border-radius:99px;background:#0F1318;
+  border:1px solid var(--line);overflow:hidden}
+.beam-fill{
+  height:100%;width:0%;background:var(--beam);border-radius:99px;
+  transition:width .4s ease;
+}
+.beam-wrap.active .beam-fill{
+  background-size:200% 100%;animation:flow 1.6s linear infinite;
+}
+@keyframes flow{from{background-position:0 0}to{background-position:200% 0}}
+@media (prefers-reduced-motion:reduce){.beam-wrap.active .beam-fill{animation:none}}
+.ticker{font-size:12px;color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.beam-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+
+/* ── paneles ────────────────────────── */
+.panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:18px;margin-bottom:18px}
+.panel-head{display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:10px;margin-bottom:14px}
+h2{font:700 15px var(--disp);letter-spacing:.03em}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:600 12px var(--disp);padding:8px 16px;border-radius:8px;
+  border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.primary:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{color:var(--muted)}
+.btn:hover:not(:disabled){filter:brightness(1.15)}
+
+/* ── tabla playlists ────────────────── */
+.row{display:flex;align-items:center;gap:12px;padding:11px 6px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.row:last-child{border-bottom:0}
+.row input[type=checkbox]{accent-color:var(--sp);width:16px;height:16px}
+.row .name{flex:1;min-width:140px;font-weight:500}
+.row .meta{font-size:11px;color:var(--muted)}
+.row .miss-link{font-size:11px;color:var(--yt);cursor:pointer;
+  background:none;border:none;font-family:var(--mono);text-decoration:underline}
+.bar-mini{width:90px;height:5px;border-radius:99px;background:#0F1318;overflow:hidden}
+.bar-mini i{display:block;height:100%;background:var(--beam)}
+.empty{color:var(--muted);padding:18px 6px;font-size:13px}
+
+/* ── scheduler / log ────────────────── */
+.grid-2{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}
+.sched{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sched input[type=number]{width:64px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:6px;padding:6px;font-family:var(--mono)}
+.muted{color:var(--muted);font-size:11px}
+.switch{position:relative;width:42px;height:22px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--line);border-radius:99px;
+  cursor:pointer;transition:.2s}
+.slider:before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;
+  background:var(--muted);top:3px;left:3px;transition:.2s}
+.switch input:checked + .slider{background:var(--sp)}
+.switch input:checked + .slider:before{transform:translateX(20px);background:#fff}
+
+.log{font-size:11.5px;max-height:240px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:3px}
+.log .t{color:var(--muted);margin-right:8px}
+.log .ok{color:var(--sp)}
+.log .warn{color:#E8B33C}
+.log .error{color:var(--yt)}
+
+/* ── dialogs ────────────────────────── */
+dialog{
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);
+  border-radius:14px;padding:24px;max-width:520px;width:92vw;
+  font-family:var(--mono);
+}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog h3{font:700 16px var(--disp);margin-bottom:12px}
+dialog label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px}
+dialog input,dialog textarea{
+  width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:9px;font:12px var(--mono)
+}
+.steps{margin:0 0 12px 18px;font-size:12.5px;display:flex;
+  flex-direction:column;gap:5px}
+.steps code{color:var(--sp)}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+/* ── móvil (Android) ────────────────── */
+@media (max-width:680px){
+  body{padding:12px}
+  .beam-wrap{grid-template-columns:1fr 1fr;grid-template-areas:
+    "sp yt" "track track";padding:16px}
+  .node.sp{grid-area:sp}
+  .node.yt{grid-area:yt;text-align:right;align-items:flex-end}
+  .beam-track{grid-area:track}
+  .grid-2{grid-template-columns:1fr}
+  .row .meta{width:100%;order:5}
+}
+:focus-visible{outline:2px solid var(--sp);outline-offset:2px}

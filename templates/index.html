@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlayBridge — Spotify → YT Music</title>
+<meta name="theme-color" content="#0B0E13">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>PLAY·BRIDGE</h1>
+    <span class="sub">spotify → youtube music {% if demo %}· <b class="demo-tag">DEMO</b>{% endif %}</span>
+  </div>
+  <div class="chips">
+    <button class="chip" id="chip-sp" onclick="connectSpotify()">
+      <i class="dot"></i> Spotify
+    </button>
+    <button class="chip" id="chip-yt" onclick="openPanel('yt')">
+      <i class="dot"></i> YT Music
+    </button>
+    <button class="chip ghost" onclick="openPanel('cfg')">⚙ Config</button>
+  </div>
+</header>
+
+<!-- ───────────────────────────── beam de transferencia (firma) -->
+<section class="beam-wrap" id="beam">
+  <div class="node sp">
+    <span class="node-label">ORIGEN</span>
+    <span class="node-name">Spotify</span>
+    <span class="node-stat" id="stat-found">0 ✓</span>
+  </div>
+
+  <div class="beam-track">
+    <div class="beam-bar"><div class="beam-fill" id="beam-fill"></div></div>
+    <div class="ticker" id="ticker">— inactivo —</div>
+    <div class="beam-meta">
+      <span id="beam-playlist"></span>
+      <span id="beam-count"></span>
+    </div>
+  </div>
+
+  <div class="node yt">
+    <span class="node-label">DESTINO</span>
+    <span class="node-name">YT Music</span>
+    <span class="node-stat warn" id="stat-missing">0 ✗</span>
+  </div>
+</section>
+
+<!-- ───────────────────────────── playlists -->
+<section class="panel">
+  <div class="panel-head">
+    <h2>Playlists</h2>
+    <div class="actions">
+      <button class="btn ghost" onclick="loadPlaylists(true)">↻ Refrescar de Spotify</button>
+      <button class="btn primary" id="btn-sync" onclick="syncSelected()">Sincronizar seleccionadas</button>
+    </div>
+  </div>
+  <div class="table" id="pl-table">
+    <div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────────── scheduler + log -->
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>Sync automática</h2></div>
+    <div class="sched">
+      <label class="switch">
+        <input type="checkbox" id="sched-on" onchange="saveScheduler()">
+        <span class="slider"></span>
+      </label>
+      <span>cada</span>
+      <input type="number" id="sched-hours" value="24" min="1" max="168" onchange="saveScheduler()">
+      <span>horas</span>
+      <span class="muted" id="sched-last"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Registro</h2></div>
+    <div class="log" id="log"></div>
+  </section>
+</div>
+
+<!-- ───────────────────────────── panel YT headers -->
+<dialog id="panel-yt">
+  <h3>Conectar YouTube Music</h3>
+  <ol class="steps">
+    <li>Abre <b>music.youtube.com</b> con sesión iniciada</li>
+    <li>F12 → pestaña <b>Red</b> → filtra <code>/browse</code></li>
+    <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
+    <li>Pégalos aquí:</li>
+  </ol>
+  <textarea id="yt-headers" rows="8" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+  <div class="dialog-actions">
+    <button class="btn ghost" onclick="closePanel('yt')">Cancelar</button>
+    <button class="btn primary" onclick="saveYtHeaders()">Guardar y conectar</button>
+  </div>
+</dialog>
+
+<!-- ───────────────────────────── panel config Spotify -->
+<dialog id="panel-cfg">
+  <h3>Credenciales Spotify</h3>
+  <p class="muted">Crea una app en <b>developer.spotify.com/dashboard</b> y añade la Redirect URI exacta.</p>
+  <label>Client ID <input type="text" id="cfg-id"></label>
+  <label>Client Secret <input type="password" id="cfg-secret" placeholder="(sin cambios)"></label>
+  <label>Redirect URI <input type="text" id="cfg-redirect"></label>
+  <div class="dialog-actions">
+    <button class="btn ghost" onclick="closePanel('cfg')">Cancelar</button>
+    <button class="btn primary" onclick="saveConfig()">Guardar</button>
+  </div>
+</dialog>
+
+<!-- ───────────────────────────── panel canciones faltantes -->
+<dialog id="panel-missing">
+  <h3 id="missing-title">No encontradas</h3>
+  <div class="log" id="missing-list" style="max-height:50vh"></div>
+  <div class="dialog-actions">
+    <button class="btn ghost" onclick="closePanel('missing')">Cerrar</button>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# PlayBridge — blueprint de Render (plan FREE, $0)
+# En render.com: New → Blueprint → conecta el repo y este archivo hace el resto.
+services:
+  - type: web
+    name: playbridge
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /healthz
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true        # Render genera uno seguro automáticamente
+      - key: DATABASE_URL
+        sync: false                # pegar la connection string de Supabase
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI
+        sync: false                # https://playbridge.onrender.com/callback
