@@ -68,8 +68,14 @@
   </div>
 </section>
 
-<!-- ───────────────────────────── scheduler + log -->
-<div class="grid-2">
+<!-- ───────────────────────────── tabs -->
+<nav class="tabs">
+  <button class="tab active" data-tab="sync" onclick="switchTab('sync')">Sincronización</button>
+  <button class="tab" data-tab="log" onclick="switchTab('log')">📋 Registro</button>
+</nav>
+
+<section id="tab-sync" class="tab-content active">
+  <!-- scheduler -->
   <section class="panel">
     <div class="panel-head"><h2>Sync automática</h2></div>
     <div class="sched">
@@ -83,12 +89,17 @@
       <span class="muted" id="sched-last"></span>
     </div>
   </section>
+</section>
 
+<section id="tab-log" class="tab-content">
   <section class="panel">
-    <div class="panel-head"><h2>Registro</h2></div>
-    <div class="log" id="log"></div>
+    <div class="panel-head">
+      <h2>Registro</h2>
+      <button class="btn ghost" onclick="clearLog()">🗑 Limpiar</button>
+    </div>
+    <div class="log-full" id="log"></div>
   </section>
-</div>
+</section>
 
 <!-- ───────────────────────────── panel conectar YT Music -->
 <dialog id="panel-yt">

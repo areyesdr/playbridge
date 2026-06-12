@@ -1,6 +1,40 @@
 /* PlayBridge — frontend */
 const $ = (id) => document.getElementById(id);
 let lastLogLen = 0;
+const LOG_KEY = "playbridge_log";
+
+/* ── tabs ─────────────────────────────── */
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === "tab-" + name));
+}
+
+/* ── log persistido en localStorage ───── */
+function logRender(entries) {
+  const html = entries.length
+    ? entries.map((l) => `<div class="${l.level}"><span class="t">${l.t}</span>${esc(l.msg)}</div>`).join("")
+    : '<div class="empty muted">Esperando actividad…</div>';
+  $("log").innerHTML = html;
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function logSave(entries) {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(entries.slice(-500))); } catch (e) {}
+}
+
+function clearLog() {
+  lastLogLen = 0;
+  if (confirm("¿Borrar todo el registro?")) {
+    try { localStorage.removeItem(LOG_KEY); } catch (e) {}
+    logRender([]);
+  }
+}
+
+// restaurar log al cargar la página
+try {
+  const saved = localStorage.getItem(LOG_KEY);
+  if (saved) logRender(JSON.parse(saved));
+} catch (e) {}
 
 /* PWA: registrar service worker (scope raíz) */
 if ("serviceWorker" in navigator) {
@@ -46,12 +80,10 @@ async function poll() {
     $("stat-missing").textContent = `${s.missing} ✗`;
     $("btn-sync").disabled = s.running;
 
-    // log incremental
+    // log incremental + persistente
     if (s.log.length !== lastLogLen) {
-      $("log").innerHTML = s.log
-        .map((l) => `<div class="${l.level}"><span class="t">${l.t}</span>${esc(l.msg)}</div>`)
-        .join("");
-      $("log").scrollTop = $("log").scrollHeight;
+      logRender(s.log);
+      logSave(s.log);
       lastLogLen = s.log.length;
       if (!s.running) loadPlaylists(false); // refrescar contadores al terminar
     }

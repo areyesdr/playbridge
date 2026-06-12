@@ -452,6 +452,9 @@ class SyncEngine:
         if DEMO:
             return self._demo_tracks(sp_playlist_id)
         sp = self.sp(uid)
+        if sp is None:
+            self.log(uid, "  ⚠ Token de Spotify no disponible. Reconecta Spotify.", "warn")
+            return []
         results = sp.playlist_tracks(sp_playlist_id, limit=100)
         items = results["items"]
         while results["next"]:
@@ -467,6 +470,7 @@ class SyncEngine:
                 "name": t["name"],
                 "artists": ", ".join(a["name"] for a in t["artists"]),
             })
+        self.log(uid, f"  {len(out)} canciones obtenidas de Spotify", "info")
         return out
 
     def refresh_playlists(self, uid):
