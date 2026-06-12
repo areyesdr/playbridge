@@ -734,9 +734,9 @@ class SyncEngine:
         def flush_batch():
             if not batch:
                 return
-            ok = self._add_to_yt(uid, yt_id, [b["vid"] for b in batch])
+            ok_list, reasons = self._add_to_yt(uid, yt_id, [b["vid"] for b in batch])
             with db() as c:
-                for b in batch:
+                for b, ok in zip(batch, ok_list):
                     status = "synced" if ok else "missing"
                     c.execute("""INSERT INTO tracks(uid,sp_track_id,sp_playlist_id,name,
                                  artists,yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s,%s)
@@ -745,17 +745,18 @@ class SyncEngine:
                               (uid, b["t"]["sp_track_id"], sp_playlist_id, b["t"]["name"],
                                b["t"]["artists"], b["vid"] if ok else None, status))
             with self.lock:
-                for b in batch:
+                for ok in ok_list:
                     if ok:
                         s["found"] += 1
                     else:
                         s["missing"] += 1
                     s["done"] += 1
-            for b in batch:
+            for b, ok, reason in zip(batch, ok_list, reasons):
                 if ok:
                     self.log(uid, f"  ✓ {b['label']}", "ok")
                 else:
-                    self.log(uid, f"  ✗ no se pudo añadir a YT Music: {b['label']}", "warn")
+                    extra = f" — {reason}" if reason else ""
+                    self.log(uid, f"  ✗ no se pudo añadir a YT Music: {b['label']}{extra}", "warn")
             batch.clear()
 
         for t in todo:
@@ -857,17 +858,56 @@ class SyncEngine:
         return None
 
     def _add_to_yt(self, uid, yt_id, video_ids):
+        """Añade video_ids a la playlist YT. Devuelve (ok, reasons): dos
+        listas paralelas a video_ids — ok[i] indica si ese video quedó
+        realmente en la playlist, y reasons[i] el motivo del rechazo
+        (None si se añadió bien)."""
         if DEMO:
-            return True
+            return [True] * len(video_ids), [None] * len(video_ids)
         try:
-            self.yt(uid).add_playlist_items(yt_id, video_ids, duplicates=False)
-            self.log(uid, f"  + {len(video_ids)} añadidas a la playlist de YT Music", "ok")
-            return True
+            resp = self.yt(uid).add_playlist_items(yt_id, video_ids, duplicates=False)
         except Exception as e:
             if self._is_auth_error(e):
                 raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
-            self.log(uid, f"  error añadiendo lote de {len(video_ids)}: {e}", "error")
-            return False
+            self.log(uid, f"  ⚠ Lote de {len(video_ids)} falló ({e}), reintentando individual…", "warn")
+            return self._add_individual_retry(uid, yt_id, video_ids)
+
+        if isinstance(resp, dict) and "SUCCEEDED" in resp.get("status", ""):
+            results = resp.get("playlistEditResults", [])
+            ok, reasons = [], []
+            for i in range(len(video_ids)):
+                r = results[i] if i < len(results) else None
+                ok.append(bool(r))
+                reasons.append(None if r else "YT Music rechazó este video (no disponible o restringido)")
+            n_failed = ok.count(False)
+            if n_failed:
+                self.log(uid, f"  ⚠ {len(video_ids) - n_failed}/{len(video_ids)} añadidas "
+                              f"({n_failed} rechazadas por YT Music)", "warn")
+            else:
+                self.log(uid, f"  + {len(video_ids)} añadidas a la playlist de YT Music", "ok")
+            return ok, reasons
+
+        self.log(uid, f"  ⚠ Respuesta inesperada al añadir lote ({resp}), reintentando individual…", "warn")
+        return self._add_individual_retry(uid, yt_id, video_ids)
+
+    def _add_individual_retry(self, uid, yt_id, video_ids):
+        """Reintenta añadir video_ids uno por uno. Devuelve (ok, reasons)
+        igual que _add_to_yt, con el mensaje de error real de cada fallo."""
+        ok, reasons = [], []
+        for vid in video_ids:
+            try:
+                self.yt(uid).add_playlist_items(yt_id, [vid], duplicates=False)
+                ok.append(True)
+                reasons.append(None)
+            except Exception as e:
+                if self._is_auth_error(e):
+                    raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
+                ok.append(False)
+                reasons.append(str(e))
+        n_failed = ok.count(False)
+        if n_failed:
+            self.log(uid, f"  ⚠ {len(video_ids) - n_failed}/{len(video_ids)} añadidas tras reintento individual", "warn")
+        return ok, reasons
 
     # ------------------------------------------------ scheduler (por usuario)
     def set_scheduler(self, uid, enabled, hours):
