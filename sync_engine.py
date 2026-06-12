@@ -1,9 +1,12 @@
 """
-sync_engine.py — Motor de sincronización PlayBridge (Spotify → YouTube Music)
+sync_engine.py — Motor de PlayBridge (Spotify → YouTube Music)
+Multi-usuario por sesión: cada visitante conecta su propia cuenta sin login.
 Estado en PostgreSQL (Supabase/Render) o SQLite local si no hay DATABASE_URL.
-Sync incremental, scheduler, credenciales persistidas en DB (sobreviven redeploys).
+Sync incremental, scheduler por usuario, credenciales persistidas en DB
+(sobreviven redeploys: el filesystem de Render es efímero).
 """
 import os
+import re
 import time
 import json
 import sqlite3
@@ -17,13 +20,13 @@ from spotipy.cache_handler import CacheHandler
 from ytmusicapi import YTMusic
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-YT_AUTH = os.path.join(BASE_DIR, "browser.json")
 DB_PATH = os.path.join(BASE_DIR, "sync.db")
 SCOPE = "playlist-read-private playlist-read-collaborative user-library-read"
 
 DEMO = os.getenv("DEMO", "0") == "1"
 DATABASE_URL = os.getenv("DATABASE_URL", "")  # postgresql://user:pass@host:5432/db
 USE_PG = bool(DATABASE_URL)
+SCHEMA_VERSION = "2"  # v2: tablas con columna uid (multi-usuario)
 
 if USE_PG:
     import psycopg2
@@ -116,29 +119,39 @@ def db():
 def init_db():
     with db() as c:
         c.execute("""
+        CREATE TABLE IF NOT EXISTS settings(
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )""")
+    # migración v1 → v2: las tablas viejas no tenían uid; se recrean
+    if setting_get("schema_version") != SCHEMA_VERSION:
+        with db() as c:
+            c.execute("DROP TABLE IF EXISTS playlists")
+            c.execute("DROP TABLE IF EXISTS tracks")
+        setting_set("schema_version", SCHEMA_VERSION)
+    with db() as c:
+        c.execute("""
         CREATE TABLE IF NOT EXISTS playlists(
-            sp_id TEXT PRIMARY KEY,
+            uid TEXT,
+            sp_id TEXT,
             name TEXT,
             yt_id TEXT,
             total INTEGER DEFAULT 0,
             synced INTEGER DEFAULT 0,
             missing INTEGER DEFAULT 0,
-            last_sync TEXT
+            last_sync TEXT,
+            PRIMARY KEY (uid, sp_id)
         )""")
         c.execute("""
         CREATE TABLE IF NOT EXISTS tracks(
+            uid TEXT,
             sp_track_id TEXT,
             sp_playlist_id TEXT,
             name TEXT,
             artists TEXT,
             yt_video_id TEXT,
             status TEXT DEFAULT 'pending',
-            PRIMARY KEY (sp_track_id, sp_playlist_id)
-        )""")
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS settings(
-            key TEXT PRIMARY KEY,
-            value TEXT
+            PRIMARY KEY (uid, sp_track_id, sp_playlist_id)
         )""")
 
 
@@ -157,139 +170,205 @@ def setting_set(key, value):
 
 
 class DBCacheHandler(CacheHandler):
-    """Token OAuth de Spotify en la tabla settings — sobrevive redeploys
-    (el filesystem de Render es efímero: un archivo .spotify_cache se perdería)."""
+    """Token OAuth de Spotify por usuario en la tabla settings."""
+    def __init__(self, uid):
+        self.uid = uid
+
     def get_cached_token(self):
-        raw = setting_get("sp_token")
+        raw = setting_get(f"sp_token:{self.uid}")
         return json.loads(raw) if raw else None
 
     def save_token_to_cache(self, token_info):
-        setting_set("sp_token", json.dumps(token_info))
+        setting_set(f"sp_token:{self.uid}", json.dumps(token_info))
+
+
+def _default_state():
+    return {
+        "running": False, "playlist": None, "current": None,
+        "done": 0, "total": 0, "found": 0, "missing": 0,
+        "log": [], "spotify_ok": DEMO, "yt_ok": DEMO,
+        "scheduler": {"enabled": False, "hours": 24, "last_run": None},
+    }
 
 
 # ---------------------------------------------------------------- Engine
 class SyncEngine:
     def __init__(self):
         init_db()
-        self.sp = None
-        self.yt = None
         self.lock = threading.Lock()
-        self.state = {
-            "running": False,
-            "playlist": None,
-            "current": None,
-            "done": 0,
-            "total": 0,
-            "found": 0,
-            "missing": 0,
-            "log": [],
-            "spotify_ok": False,
-            "yt_ok": False,
-            "scheduler": {"enabled": setting_get("sched_enabled", "0") == "1",
-                          "hours": int(setting_get("sched_hours", "24")),
-                          "last_run": setting_get("sched_last_run")},
-        }
-        self._sched_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
-        self._sched_thread.start()
-        if DEMO:
-            self.state["spotify_ok"] = True
-            self.state["yt_ok"] = True
-            self._seed_demo()
+        self.states = {}      # uid -> estado en memoria (requiere 1 worker gunicorn)
+        self.yt_clients = {}  # uid -> YTMusic
+        threading.Thread(target=self._scheduler_loop, daemon=True).start()
 
-    # ------------------------------------------------ logging / estado
-    def log(self, msg, level="info"):
+    # ------------------------------------------------ estado por usuario
+    def st(self, uid):
+        with self.lock:
+            if uid not in self.states:
+                self.states[uid] = _default_state()
+                fresh = True
+            else:
+                fresh = False
+        if fresh:
+            sch = self.states[uid]["scheduler"]
+            sch["enabled"] = setting_get(f"sched_enabled:{uid}", "0") == "1"
+            sch["hours"] = int(setting_get(f"sched_hours:{uid}", "24"))
+            sch["last_run"] = setting_get(f"sched_last_run:{uid}")
+            if DEMO:
+                self._seed_demo(uid)
+        return self.states[uid]
+
+    def log(self, uid, msg, level="info"):
         line = {"t": datetime.now().strftime("%H:%M:%S"), "level": level, "msg": msg}
+        s = self.st(uid)
         with self.lock:
-            self.state["log"].append(line)
-            self.state["log"] = self.state["log"][-300:]
+            s["log"].append(line)
+            s["log"] = s["log"][-300:]
 
-    def snapshot(self):
+    def snapshot(self, uid):
+        s = self.st(uid)
+        # flags perezosos: el token/headers viven en DB, válidos entre reinicios
+        if not s["spotify_ok"]:
+            s["spotify_ok"] = DEMO or bool(setting_get(f"sp_token:{uid}"))
+        if not s["yt_ok"]:
+            s["yt_ok"] = DEMO or setting_get(f"yt_ok:{uid}") == "1"
         with self.lock:
-            return json.loads(json.dumps(self.state))
+            return json.loads(json.dumps(s))
 
-    # ------------------------------------------------ auth
-    def oauth(self):
+    # ------------------------------------------------ auth Spotify
+    def oauth(self, uid):
         return SpotifyOAuth(
             client_id=setting_get("sp_client_id") or os.getenv("SPOTIFY_CLIENT_ID", ""),
             client_secret=setting_get("sp_client_secret") or os.getenv("SPOTIFY_CLIENT_SECRET", ""),
             redirect_uri=setting_get("sp_redirect") or os.getenv("SPOTIFY_REDIRECT_URI",
                                      "http://localhost:5000/callback"),
-            scope=SCOPE, cache_handler=DBCacheHandler(), open_browser=False,
+            scope=SCOPE, cache_handler=DBCacheHandler(uid), open_browser=False,
         )
 
-    def connect_spotify(self):
+    def sp(self, uid):
+        """Cliente Spotify del usuario, reconstruido desde el token en DB.
+        Funciona en cualquier worker/reinicio sin estado en memoria."""
+        if DEMO:
+            return None
+        auth = self.oauth(uid)
+        if not auth.cache_handler.get_cached_token():
+            return None
+        return spotipy.Spotify(auth_manager=auth)
+
+    def connect_spotify(self, uid):
         if DEMO:
             return True
         try:
-            auth = self.oauth()
-            token = auth.get_cached_token()
-            if not token:
+            client = self.sp(uid)
+            if client is None:
                 return False
-            self.sp = spotipy.Spotify(auth_manager=auth)
-            self.sp.current_user()  # valida token
-            with self.lock:
-                self.state["spotify_ok"] = True
+            client.current_user()  # valida token
+            self.st(uid)["spotify_ok"] = True
             return True
         except Exception as e:
-            self.log(f"Spotify: {e}", "error")
-            with self.lock:
-                self.state["spotify_ok"] = False
+            self.log(uid, f"Spotify: {e}", "error")
+            self.st(uid)["spotify_ok"] = False
             return False
 
-    def connect_yt(self):
+    # ------------------------------------------------ auth YT Music
+    def _yt_path(self, uid):
+        return os.path.join(BASE_DIR, f"browser_{uid}.json")
+
+    def yt(self, uid):
+        if uid in self.yt_clients:
+            return self.yt_clients[uid]
+        path = self._yt_path(uid)
+        if not os.path.exists(path):
+            saved = setting_get(f"yt_auth:{uid}")  # restaurar tras redeploy
+            if not saved:
+                return None
+            with open(path, "w") as f:
+                f.write(saved)
+        client = YTMusic(path)
+        self.yt_clients[uid] = client
+        return client
+
+    def connect_yt(self, uid):
         if DEMO:
             return True
         try:
-            if not os.path.exists(YT_AUTH):
-                # restaurar desde DB tras un redeploy (filesystem efímero en Render)
-                saved = setting_get("yt_auth")
-                if not saved:
-                    return False
-                with open(YT_AUTH, "w") as f:
-                    f.write(saved)
-            self.yt = YTMusic(YT_AUTH)
-            self.yt.get_library_playlists(limit=1)  # valida headers
-            with self.lock:
-                self.state["yt_ok"] = True
+            client = self.yt(uid)
+            if client is None:
+                return False
+            client.get_library_playlists(limit=1)  # valida headers
+            self.st(uid)["yt_ok"] = True
+            setting_set(f"yt_ok:{uid}", "1")
             return True
         except Exception as e:
-            self.log(f"YT Music: {e}", "error")
-            with self.lock:
-                self.state["yt_ok"] = False
+            self.log(uid, f"YT Music: {e}", "error")
+            self.st(uid)["yt_ok"] = False
+            setting_set(f"yt_ok:{uid}", "0")
+            self.yt_clients.pop(uid, None)
             return False
 
-    def setup_yt_headers(self, headers_raw):
-        """Crea browser.json desde headers pegados por el usuario y lo respalda en DB."""
-        import re
+    def setup_yt_headers(self, uid, headers_raw):
+        """Crea el auth de YT Music desde headers pegados por el usuario.
+        Tolera cualquier formato de pegado: 'nombre: valor', nombre y valor en
+        líneas separadas, o todo aplanado en una sola línea sin colones."""
         import ytmusicapi
-        if "\n" not in headers_raw.strip():
-            # algunos portapapeles/teclados pegan todo en una sola línea:
-            # reinsertar un salto antes de cada "nombre-de-header: valor"
-            headers_raw = re.sub(r"\s+(?=[A-Za-z0-9-]+:\s)", "\n", headers_raw)
-        ytmusicapi.setup(filepath=YT_AUTH, headers_raw=headers_raw)
-        with open(YT_AUTH) as f:
-            setting_set("yt_auth", f.read())
-        return self.connect_yt()
+        path = self._yt_path(uid)
+        raw = headers_raw.strip()
+        if "\n" not in raw:
+            raw = re.sub(r"\s+(?=[A-Za-z0-9-]+:\s)", "\n", raw)
+        try:
+            ytmusicapi.setup(filepath=path, headers_raw=raw)
+        except Exception:
+            # rescate: extraer cookie y authuser directo del texto, venga como venga
+            m_cookie = re.search(
+                r"((?:[\w.~\-]+=[^;\s]+;\s*){3,}[\w.~\-]+=[^;\s]+)", headers_raw)
+            if not (m_cookie and "SAPISID" in m_cookie.group(1)):
+                raise
+            m_user = re.search(r"x-goog-authuser\D*(\d+)", headers_raw, re.I)
+            m_ua = re.search(r"(Mozilla/5\.0[^\n]*?Safari/[\d.]+)", headers_raw)
+            m_auth = re.search(r"(SAPISIDHASH \S+)", headers_raw)
+            # mismo formato que escribe ytmusicapi.setup (claves en minúsculas);
+            # el hash de authorization se regenera por request desde la cookie
+            cfg = {
+                "accept": "*/*",
+                "accept-encoding": "gzip, deflate",
+                "accept-language": "en-US,en;q=0.5",
+                "authorization": m_auth.group(1) if m_auth else "SAPISIDHASH regenerated",
+                "content-type": "application/json",
+                "cookie": m_cookie.group(1).strip(),
+                "origin": "https://music.youtube.com",
+                "user-agent": m_ua.group(1) if m_ua else
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "x-goog-authuser": m_user.group(1) if m_user else "0",
+                "x-origin": "https://music.youtube.com",
+            }
+            with open(path, "w") as f:
+                json.dump(cfg, f)
+        with open(path) as f:
+            setting_set(f"yt_auth:{uid}", f.read())
+        self.yt_clients.pop(uid, None)  # forzar recarga con headers nuevos
+        return self.connect_yt(uid)
 
     # ------------------------------------------------ datos Spotify
-    def fetch_playlists(self):
+    def fetch_playlists(self, uid):
         if DEMO:
-            return self._demo_playlists()
-        results = self.sp.current_user_playlists(limit=50)
+            return self._demo_playlists(uid)
+        sp = self.sp(uid)
+        results = sp.current_user_playlists(limit=50)
         items = results["items"]
         while results["next"]:
-            results = self.sp.next(results)
+            results = sp.next(results)
             items.extend(results["items"])
         return [{"sp_id": p["id"], "name": p["name"], "total": p["tracks"]["total"]}
-                for p in items]
+                for p in items if p]
 
-    def fetch_tracks(self, sp_playlist_id):
+    def fetch_tracks(self, uid, sp_playlist_id):
         if DEMO:
             return self._demo_tracks(sp_playlist_id)
-        results = self.sp.playlist_tracks(sp_playlist_id, limit=100)
+        sp = self.sp(uid)
+        results = sp.playlist_tracks(sp_playlist_id, limit=100)
         items = results["items"]
         while results["next"]:
-            results = self.sp.next(results)
+            results = sp.next(results)
             items.extend(results["items"])
         out = []
         for it in items:
@@ -303,199 +382,219 @@ class SyncEngine:
             })
         return out
 
-    def refresh_playlists(self):
+    def refresh_playlists(self, uid):
         """Trae playlists de Spotify y las refleja en DB (sin borrar estado)."""
-        pls = self.fetch_playlists()
+        pls = self.fetch_playlists(uid)
         with db() as c:
             for p in pls:
-                c.execute("""INSERT INTO playlists(sp_id,name,total) VALUES(%s,%s,%s)
-                             ON CONFLICT(sp_id) DO UPDATE SET name=EXCLUDED.name,
+                c.execute("""INSERT INTO playlists(uid,sp_id,name,total) VALUES(%s,%s,%s,%s)
+                             ON CONFLICT(uid,sp_id) DO UPDATE SET name=EXCLUDED.name,
                              total=EXCLUDED.total""",
-                          (p["sp_id"], p["name"], p["total"]))
-        return self.playlists_view()
+                          (uid, p["sp_id"], p["name"], p["total"]))
+        return self.playlists_view(uid)
 
-    def playlists_view(self):
+    def playlists_view(self, uid):
         with db() as c:
-            c.execute("SELECT * FROM playlists ORDER BY name")
+            c.execute("SELECT * FROM playlists WHERE uid=%s ORDER BY name", (uid,))
             return [dict(r) for r in c.fetchall()]
 
-    def missing_tracks(self, sp_playlist_id):
+    def missing_tracks(self, uid, sp_playlist_id):
         with db() as c:
             c.execute("""SELECT name, artists FROM tracks
-                         WHERE sp_playlist_id=%s AND status='missing'
-                         ORDER BY artists""", (sp_playlist_id,))
+                         WHERE uid=%s AND sp_playlist_id=%s AND status='missing'
+                         ORDER BY artists""", (uid, sp_playlist_id))
             return [dict(r) for r in c.fetchall()]
 
     # ------------------------------------------------ sync core
-    def start_sync(self, playlist_ids):
+    def start_sync(self, uid, playlist_ids):
+        s = self.st(uid)
         with self.lock:
-            if self.state["running"]:
+            if s["running"]:
                 return False
-            self.state["running"] = True
-        threading.Thread(target=self._sync_worker, args=(playlist_ids,), daemon=True).start()
+            s["running"] = True
+        threading.Thread(target=self._sync_worker, args=(uid, playlist_ids),
+                         daemon=True).start()
         return True
 
-    def _sync_worker(self, playlist_ids):
+    def _sync_worker(self, uid, playlist_ids):
+        s = self.st(uid)
         try:
             if playlist_ids == "all":
-                playlist_ids = [p["sp_id"] for p in self.playlists_view()]
+                playlist_ids = [p["sp_id"] for p in self.playlists_view(uid)]
             for pid in playlist_ids:
-                self._sync_one(pid)
-            self.log("Sincronización completada", "ok")
+                self._sync_one(uid, pid)
+            self.log(uid, "Sincronización completada", "ok")
         except Exception as e:
-            self.log(f"Error fatal: {e}", "error")
+            self.log(uid, f"Error fatal: {e}", "error")
         finally:
             with self.lock:
-                self.state["running"] = False
-                self.state["current"] = None
-                self.state["playlist"] = None
+                s["running"] = False
+                s["current"] = None
+                s["playlist"] = None
 
-    def _sync_one(self, sp_playlist_id):
+    def _sync_one(self, uid, sp_playlist_id):
+        s = self.st(uid)
         with db() as c:
-            c.execute("SELECT * FROM playlists WHERE sp_id=%s", (sp_playlist_id,))
+            c.execute("SELECT * FROM playlists WHERE uid=%s AND sp_id=%s",
+                      (uid, sp_playlist_id))
             pl = c.fetchone()
         if not pl:
             return
         name = pl["name"]
-        self.log(f"▶ Playlist: {name}")
-        tracks = self.fetch_tracks(sp_playlist_id)
+        self.log(uid, f"▶ Playlist: {name}")
+        tracks = self.fetch_tracks(uid, sp_playlist_id)
 
         # incremental: solo pendientes / nuevas
         with db() as c:
-            c.execute("SELECT sp_track_id FROM tracks WHERE sp_playlist_id=%s AND status='synced'",
-                      (sp_playlist_id,))
+            c.execute("""SELECT sp_track_id FROM tracks
+                         WHERE uid=%s AND sp_playlist_id=%s AND status='synced'""",
+                      (uid, sp_playlist_id))
             done_ids = {r["sp_track_id"] for r in c.fetchall()}
         todo = [t for t in tracks if t["sp_track_id"] not in done_ids]
 
         with self.lock:
-            self.state.update(playlist=name, total=len(todo), done=0,
-                              found=0, missing=0)
+            s.update(playlist=name, total=len(todo), done=0, found=0, missing=0)
 
         if not todo:
-            self.log(f"  Sin cambios ({len(tracks)} ya sincronizadas)")
-            self._update_counts(sp_playlist_id, len(tracks))
+            self.log(uid, f"  Sin cambios ({len(tracks)} ya sincronizadas)")
+            self._update_counts(uid, sp_playlist_id, len(tracks))
             return
 
-        yt_id = pl["yt_id"] or self._create_yt_playlist(name)
+        yt_id = pl["yt_id"] or self._create_yt_playlist(uid, name)
         added_ids = []
 
         for t in todo:
             label = f"{t['artists']} — {t['name']}"
             with self.lock:
-                self.state["current"] = label
-            vid = self._search_yt(t)
+                s["current"] = label
+            vid = self._search_yt(uid, t)
             if vid:
                 added_ids.append(vid)
                 status = "synced"
                 with self.lock:
-                    self.state["found"] += 1
-                self.log(f"  ✓ {label}", "ok")
+                    s["found"] += 1
+                self.log(uid, f"  ✓ {label}", "ok")
             else:
                 vid = None
                 status = "missing"
                 with self.lock:
-                    self.state["missing"] += 1
-                self.log(f"  ✗ No encontrada: {label}", "warn")
+                    s["missing"] += 1
+                self.log(uid, f"  ✗ No encontrada: {label}", "warn")
             with db() as c:
-                c.execute("""INSERT INTO tracks(sp_track_id,sp_playlist_id,name,artists,
-                             yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s)
-                             ON CONFLICT(sp_track_id,sp_playlist_id) DO UPDATE SET
+                c.execute("""INSERT INTO tracks(uid,sp_track_id,sp_playlist_id,name,
+                             artists,yt_video_id,status) VALUES(%s,%s,%s,%s,%s,%s,%s)
+                             ON CONFLICT(uid,sp_track_id,sp_playlist_id) DO UPDATE SET
                              yt_video_id=EXCLUDED.yt_video_id, status=EXCLUDED.status""",
-                          (t["sp_track_id"], sp_playlist_id, t["name"], t["artists"],
-                           vid, status))
+                          (uid, t["sp_track_id"], sp_playlist_id, t["name"],
+                           t["artists"], vid, status))
             with self.lock:
-                self.state["done"] += 1
+                s["done"] += 1
             # lote de 25 para no saturar la API
             if len(added_ids) >= 25:
-                self._add_to_yt(yt_id, added_ids)
+                self._add_to_yt(uid, yt_id, added_ids)
                 added_ids = []
             if not DEMO:
                 time.sleep(0.25)
 
         if added_ids:
-            self._add_to_yt(yt_id, added_ids)
-        self._update_counts(sp_playlist_id, len(tracks), yt_id)
+            self._add_to_yt(uid, yt_id, added_ids)
+        self._update_counts(uid, sp_playlist_id, len(tracks), yt_id)
 
-    def _update_counts(self, sp_playlist_id, total, yt_id=None):
+    def _update_counts(self, uid, sp_playlist_id, total, yt_id=None):
         with db() as c:
-            c.execute("SELECT COUNT(*) n FROM tracks WHERE sp_playlist_id=%s AND status='synced'",
-                      (sp_playlist_id,))
+            c.execute("""SELECT COUNT(*) n FROM tracks
+                         WHERE uid=%s AND sp_playlist_id=%s AND status='synced'""",
+                      (uid, sp_playlist_id))
             synced = c.fetchone()["n"]
-            c.execute("SELECT COUNT(*) n FROM tracks WHERE sp_playlist_id=%s AND status='missing'",
-                      (sp_playlist_id,))
+            c.execute("""SELECT COUNT(*) n FROM tracks
+                         WHERE uid=%s AND sp_playlist_id=%s AND status='missing'""",
+                      (uid, sp_playlist_id))
             missing = c.fetchone()["n"]
             c.execute("""UPDATE playlists SET total=%s, synced=%s, missing=%s,
-                         last_sync=%s, yt_id=COALESCE(%s, yt_id) WHERE sp_id=%s""",
-                      (total, synced, missing, datetime.now().isoformat(timespec="seconds"),
-                       yt_id, sp_playlist_id))
+                         last_sync=%s, yt_id=COALESCE(%s, yt_id)
+                         WHERE uid=%s AND sp_id=%s""",
+                      (total, synced, missing,
+                       datetime.now().isoformat(timespec="seconds"),
+                       yt_id, uid, sp_playlist_id))
 
-    def _create_yt_playlist(self, name):
+    def _create_yt_playlist(self, uid, name):
         if DEMO:
             return f"DEMO_{name}"
-        return self.yt.create_playlist(name, description="Sincronizada desde Spotify")
+        return self.yt(uid).create_playlist(name, description="Sincronizada desde Spotify")
 
-    def _search_yt(self, track):
+    def _search_yt(self, uid, track):
         if DEMO:
             time.sleep(0.08)
             return None if hash(track["sp_track_id"]) % 9 == 0 else "demo_vid"
         try:
             q = f"{track['artists']} {track['name']}"
-            res = self.yt.search(q, filter="songs", limit=3)
+            res = self.yt(uid).search(q, filter="songs", limit=3)
             for r in res:
                 if r.get("videoId"):
                     return r["videoId"]
         except Exception as e:
-            self.log(f"  búsqueda falló: {e}", "error")
+            self.log(uid, f"  búsqueda falló: {e}", "error")
         return None
 
-    def _add_to_yt(self, yt_id, video_ids):
+    def _add_to_yt(self, uid, yt_id, video_ids):
         if DEMO:
             return
         try:
-            self.yt.add_playlist_items(yt_id, video_ids, duplicates=False)
+            self.yt(uid).add_playlist_items(yt_id, video_ids, duplicates=False)
         except Exception as e:
-            self.log(f"  error añadiendo lote: {e}", "error")
+            self.log(uid, f"  error añadiendo lote: {e}", "error")
 
-    # ------------------------------------------------ scheduler
-    def set_scheduler(self, enabled, hours):
-        setting_set("sched_enabled", "1" if enabled else "0")
-        setting_set("sched_hours", int(hours))
+    # ------------------------------------------------ scheduler (por usuario)
+    def set_scheduler(self, uid, enabled, hours):
+        setting_set(f"sched_enabled:{uid}", "1" if enabled else "0")
+        setting_set(f"sched_hours:{uid}", int(hours))
+        s = self.st(uid)
         with self.lock:
-            self.state["scheduler"]["enabled"] = enabled
-            self.state["scheduler"]["hours"] = int(hours)
+            s["scheduler"]["enabled"] = enabled
+            s["scheduler"]["hours"] = int(hours)
 
     def _scheduler_loop(self):
         while True:
             time.sleep(60)
-            with self.lock:
-                sch = self.state["scheduler"]
-                running = self.state["running"]
-            if not sch["enabled"] or running:
+            try:
+                with db() as c:
+                    c.execute("""SELECT key FROM settings
+                                 WHERE key LIKE 'sched_enabled:%%' AND value='1'""")
+                    uids = [r["key"].split(":", 1)[1] for r in c.fetchall()]
+            except Exception:
                 continue
-            last = setting_get("sched_last_run")
-            elapsed_ok = True
-            if last:
-                elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
-                elapsed_ok = elapsed >= sch["hours"] * 3600
-            if elapsed_ok and self.state["spotify_ok"] and self.state["yt_ok"]:
-                self.log("⏰ Sync automática programada", "info")
-                setting_set("sched_last_run", datetime.now().isoformat(timespec="seconds"))
+            for uid in uids:
+                s = self.st(uid)
+                if s["running"]:
+                    continue
+                hours = int(setting_get(f"sched_hours:{uid}", "24"))
+                last = setting_get(f"sched_last_run:{uid}")
+                if last:
+                    elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+                    if elapsed < hours * 3600:
+                        continue
+                if not (setting_get(f"sp_token:{uid}") and
+                        setting_get(f"yt_ok:{uid}") == "1"):
+                    continue
+                self.log(uid, "⏰ Sync automática programada", "info")
+                now = datetime.now().isoformat(timespec="seconds")
+                setting_set(f"sched_last_run:{uid}", now)
                 with self.lock:
-                    self.state["scheduler"]["last_run"] = setting_get("sched_last_run")
-                self.start_sync("all")
+                    s["scheduler"]["last_run"] = now
+                self.start_sync(uid, "all")
 
     # ------------------------------------------------ demo
-    def _seed_demo(self):
+    def _seed_demo(self, uid):
         demo = [("dm1", "Synthwave Nights", 14), ("dm2", "Made in Abyss OST", 9),
                 ("dm3", "Coding Focus", 22), ("dm4", "Latin Classics", 11)]
         with db() as c:
             for pid, name, total in demo:
-                c.execute("""INSERT INTO playlists(sp_id,name,total) VALUES(%s,%s,%s)
-                             ON CONFLICT(sp_id) DO NOTHING""", (pid, name, total))
+                c.execute("""INSERT INTO playlists(uid,sp_id,name,total) VALUES(%s,%s,%s,%s)
+                             ON CONFLICT(uid,sp_id) DO NOTHING""", (uid, pid, name, total))
 
-    def _demo_playlists(self):
+    def _demo_playlists(self, uid):
         return [{"sp_id": r["sp_id"], "name": r["name"], "total": r["total"]}
-                for r in self.playlists_view()]
+                for r in self.playlists_view(uid)]
 
     def _demo_tracks(self, pid):
         import random

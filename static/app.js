@@ -7,6 +7,25 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
+/* ───────────────────────── toasts */
+function toast(msg, type = "info", ms = 3800) {
+  let wrap = $("toasts");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "toasts";
+    document.body.appendChild(wrap);
+  }
+  const t = document.createElement("div");
+  t.className = "toast " + type;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => {
+    t.classList.remove("show");
+    setTimeout(() => t.remove(), 300);
+  }, ms);
+}
+
 /* ───────────────────────── estado (polling cada 1.5s) */
 async function poll() {
   try {
@@ -51,8 +70,9 @@ async function poll() {
 async function loadPlaylists(refresh) {
   const res = await fetch("/api/playlists" + (refresh ? "?refresh=1" : ""));
   const data = await res.json();
-  if (data.error) { alert(data.error); return; }
+  if (data.error) { toast(data.error, "error"); return; }
   const t = $("pl-table");
+  if (refresh) toast(`${data.length} playlists cargadas de Spotify`, "ok");
   if (!data.length) { t.innerHTML = `<div class="empty">Sin playlists. Conecta Spotify y refresca.</div>`; return; }
   t.innerHTML = data.map((p) => {
     const pct = p.total ? Math.round((p.synced / p.total) * 100) : 0;
@@ -75,7 +95,9 @@ async function syncSelected() {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })).json();
-  if (res.error) alert(res.error);
+  if (res.error) toast(res.error, "error");
+  else if (res.started) toast("Sincronización iniciada", "ok");
+  else toast("Ya hay una sincronización en curso", "warn");
 }
 
 async function showMissing(id, name) {
@@ -98,8 +120,8 @@ async function saveYtHeaders() {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ headers: $("yt-headers").value }),
   })).json();
-  if (res.ok) { closePanel("yt"); }
-  else alert("Headers inválidos: " + (res.error || "revisa el formato"));
+  if (res.ok) { closePanel("yt"); toast("YouTube Music conectado ✓", "ok"); }
+  else toast("Headers inválidos: " + (res.error || "revisa el formato"), "error", 6000);
 }
 
 async function saveConfig() {
@@ -112,6 +134,7 @@ async function saveConfig() {
     }),
   });
   closePanel("cfg");
+  toast("Credenciales guardadas", "ok");
 }
 
 async function loadConfig() {

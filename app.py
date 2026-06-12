@@ -1,22 +1,42 @@
 """
 app.py — PlayBridge: sincronizador Spotify → YouTube Music
-Corre en Render (gunicorn), Debian (python3 app.py) o Termux,
-y es instalable como PWA en Android.
+Multi-usuario: cada visitante conecta su propia cuenta vía cookie de sesión
+anónima (sin registro). Corre en Render (gunicorn --workers 1 --threads 8),
+Debian (python3 app.py) o Termux, e instalable como PWA en Android.
 """
 import os
-from flask import Flask, render_template, request, jsonify, redirect, send_from_directory
+import secrets
+from uuid import uuid4
+from datetime import timedelta
+
+from flask import (Flask, render_template, request, jsonify, redirect,
+                   send_from_directory, session)
 from sync_engine import SyncEngine, setting_get, setting_set, DEMO
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
+engine = SyncEngine()
+
+# SECRET_KEY estable: si no viene por env, se genera una vez y persiste en DB
+# (si cambiara en cada arranque, las sesiones — y la identidad de cada
+# usuario — se perderían en cada reinicio)
+_sk = os.getenv("SECRET_KEY") or setting_get("secret_key")
+if not _sk:
+    _sk = secrets.token_hex(32)
+    setting_set("secret_key", _sk)
+app.secret_key = _sk
+app.permanent_session_lifetime = timedelta(days=365)
 
 # Render sirve detrás de proxy — confiar en headers X-Forwarded
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-engine = SyncEngine()
-engine.connect_spotify()
-engine.connect_yt()
+
+def uid():
+    """Identidad anónima por navegador: cookie de sesión de larga duración."""
+    if "uid" not in session:
+        session["uid"] = uuid4().hex
+        session.permanent = True
+    return session["uid"]
 
 
 # ---------------------------------------------------------------- vistas
@@ -41,54 +61,62 @@ def service_worker():
 # ---------------------------------------------------------------- OAuth Spotify
 @app.route("/spotify/login")
 def spotify_login():
-    return redirect(engine.oauth().get_authorize_url())
+    return redirect(engine.oauth(uid()).get_authorize_url())
 
 
 @app.route("/callback")
 def spotify_callback():
     code = request.args.get("code")
     if code:
-        engine.oauth().get_access_token(code, as_dict=False)
-        engine.connect_spotify()
+        u = uid()
+        engine.oauth(u).get_access_token(code, as_dict=False)
+        engine.connect_spotify(u)
     return redirect("/")
 
 
 # ---------------------------------------------------------------- API
 @app.route("/api/status")
 def api_status():
-    return jsonify(engine.snapshot())
+    return jsonify(engine.snapshot(uid()))
 
 
 @app.route("/api/playlists")
 def api_playlists():
+    u = uid()
     refresh = request.args.get("refresh") == "1"
     try:
-        if refresh and (engine.state["spotify_ok"] or DEMO):
-            return jsonify(engine.refresh_playlists())
-        return jsonify(engine.playlists_view())
+        if refresh:
+            if not (DEMO or engine.sp(u)):
+                return jsonify({"error": "Conecta Spotify primero"}), 400
+            return jsonify(engine.refresh_playlists(u))
+        return jsonify(engine.playlists_view(u))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
+    u = uid()
     data = request.get_json(force=True)
     ids = data.get("playlist_ids", "all")
-    if not DEMO and not (engine.state["spotify_ok"] and engine.state["yt_ok"]):
-        return jsonify({"error": "Conecta Spotify y YouTube Music primero"}), 400
-    started = engine.start_sync(ids)
+    if not DEMO:
+        if not engine.sp(u):
+            return jsonify({"error": "Conecta Spotify primero"}), 400
+        if setting_get(f"yt_ok:{u}") != "1":
+            return jsonify({"error": "Conecta YouTube Music primero"}), 400
+    started = engine.start_sync(u, ids)
     return jsonify({"started": started})
 
 
 @app.route("/api/missing/<pl_id>")
 def api_missing(pl_id):
-    return jsonify(engine.missing_tracks(pl_id))
+    return jsonify(engine.missing_tracks(uid(), pl_id))
 
 
 @app.route("/api/scheduler", methods=["POST"])
 def api_scheduler():
     data = request.get_json(force=True)
-    engine.set_scheduler(bool(data.get("enabled")), int(data.get("hours", 24)))
+    engine.set_scheduler(uid(), bool(data.get("enabled")), int(data.get("hours", 24)))
     return jsonify({"ok": True})
 
 
@@ -102,7 +130,9 @@ def api_config():
         return jsonify({"ok": True})
     return jsonify({
         "sp_client_id": setting_get("sp_client_id", ""),
-        "sp_redirect": setting_get("sp_redirect", "http://localhost:5000/callback"),
+        "sp_redirect": setting_get("sp_redirect",
+                                   os.getenv("SPOTIFY_REDIRECT_URI",
+                                             "http://localhost:5000/callback")),
         "has_secret": bool(setting_get("sp_client_secret")),
     })
 
@@ -111,7 +141,7 @@ def api_config():
 def api_yt_setup():
     headers_raw = request.get_json(force=True).get("headers", "")
     try:
-        ok = engine.setup_yt_headers(headers_raw)
+        ok = engine.setup_yt_headers(uid(), headers_raw)
         return jsonify({"ok": ok})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -119,9 +149,10 @@ def api_yt_setup():
 
 @app.route("/api/reconnect", methods=["POST"])
 def api_reconnect():
+    u = uid()
     return jsonify({
-        "spotify": engine.connect_spotify(),
-        "yt": engine.connect_yt(),
+        "spotify": engine.connect_spotify(u),
+        "yt": engine.connect_yt(u),
     })
 
 
