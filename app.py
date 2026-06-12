@@ -31,6 +31,15 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
+@app.after_request
+def no_cache(response):
+    """Prevenir caché del navegador en todas las respuestas."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 def uid():
     """Identidad anónima por navegador: cookie de sesión de larga duración."""
     if "uid" not in session:

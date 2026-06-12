@@ -111,7 +111,7 @@ function updateOnboard(spState, ytState) {
 /* ───────────────────────── estado (polling cada 1.5s) */
 async function poll() {
   try {
-    const s = await (await fetch("/api/status")).json();
+    const s = await (await fetch("/api/status?t=" + Date.now())).json();
 
     setPill("sp", s.spotify_state, s.spotify_user);
     setPill("yt", s.yt_state, s.yt_user || (s.yt_method === "oauth" ? "Google" : s.yt_method === "headers" ? "Navegador" : null));
