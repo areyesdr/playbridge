@@ -285,8 +285,13 @@ class SyncEngine:
                                 setting_set(f"yt_user:{uid}", name)
                         else:
                             s["yt_ok"] = False
-                    except Exception:
-                        s["yt_ok"] = False
+                    except Exception as e:
+                        if "invalid argument" in str(e).lower():
+                            # error 400 intermitente conocido de Google en OAuth:
+                            # no marcar como expirado, mantener el estado previo
+                            s["yt_ok"] = setting_get(f"yt_ok:{uid}") == "1"
+                        else:
+                            s["yt_ok"] = False
                     setting_set(f"yt_check:{uid}", str(now))
                     setting_set(f"yt_ok:{uid}", "1" if s["yt_ok"] else "0")
                 s["yt_state"] = "ok" if s["yt_ok"] else "expired"
@@ -449,11 +454,17 @@ class SyncEngine:
         except Exception as e:
             msg = str(e)
             if "invalid argument" in msg.lower():
-                self.log(uid, "YT Music: la cuenta de Google no tiene YouTube Music "
-                               "inicializado. Abre music.youtube.com con esa cuenta, "
-                               "acepta los términos y vuelve a conectar.", "error")
-            else:
-                self.log(uid, f"YT Music: {msg}", "error")
+                # bug intermitente conocido de ytmusicapi/Google en endpoints
+                # de tipo "browse" vía OAuth: el token recién obtenido suele
+                # ser válido igual, así que no se bloquea la conexión por esto.
+                self.log(uid, "YT Music: la verificación de cuenta falló con un error "
+                               "intermitente conocido de Google (400 invalid argument), "
+                               "pero el inicio de sesión se guardó. Si la sincronización "
+                               "falla después, reconecta de nuevo.", "warn")
+                self.st(uid)["yt_ok"] = True
+                setting_set(f"yt_ok:{uid}", "1")
+                return True
+            self.log(uid, f"YT Music: {msg}", "error")
             self.st(uid)["yt_ok"] = False
             setting_set(f"yt_ok:{uid}", "0")
             self.yt_clients.pop(uid, None)
@@ -564,13 +575,22 @@ class SyncEngine:
             results = sp.next(results)
             items.extend(results["items"])
         out = []
+        skip_no_track, skip_no_id, skip_local, skip_no_artists = 0, 0, 0, 0
         for it in items:
             t = it.get("track")
-            if not t or not t.get("id") or t.get("is_local"):
+            if not t:
+                skip_no_track += 1
+                continue
+            if t.get("is_local"):
+                skip_local += 1
+                continue
+            if not t.get("id"):
+                skip_no_id += 1
                 continue
             artists = t.get("artists")
             if not artists:
                 # episodios de podcast u otros items sin artistas: no migrables
+                skip_no_artists += 1
                 continue
             out.append({
                 "sp_track_id": t["id"],
@@ -580,8 +600,9 @@ class SyncEngine:
         if out:
             self.log(uid, f"  {len(out)} canciones obtenidas de Spotify ({len(items)} ítems totales)", "info")
         elif items:
-            self.log(uid, f"  ⚠ 0 canciones migrables de {len(items)} ítems "
-                          "(¿solo episodios de podcast o pistas locales?)", "warn")
+            detail = (f"sin objeto track: {skip_no_track}, locales: {skip_local}, "
+                      f"sin id: {skip_no_id}, sin artistas: {skip_no_artists}")
+            self.log(uid, f"  ⚠ 0 canciones migrables de {len(items)} ítems ({detail})", "warn")
         else:
             self.log(uid, "  ⚠ La playlist está vacía en Spotify", "warn")
         return out
