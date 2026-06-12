@@ -584,11 +584,13 @@ class SyncEngine:
         out = []
         skip_no_track, skip_no_id, skip_local, skip_no_artists = 0, 0, 0, 0
         for it in items:
-            t = it.get("track")
+            # algunas respuestas de la API devuelven el track bajo "item"
+            # en vez de "track" (visto en cuentas/playlists recientes)
+            t = it.get("track") or it.get("item")
             if not t:
                 skip_no_track += 1
                 continue
-            if t.get("is_local"):
+            if t.get("is_local") or it.get("is_local"):
                 skip_local += 1
                 continue
             if not t.get("id"):
