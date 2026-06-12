@@ -260,7 +260,12 @@ class SyncEngine:
 
     def setup_yt_headers(self, headers_raw):
         """Crea browser.json desde headers pegados por el usuario y lo respalda en DB."""
+        import re
         import ytmusicapi
+        if "\n" not in headers_raw.strip():
+            # algunos portapapeles/teclados pegan todo en una sola línea:
+            # reinsertar un salto antes de cada "nombre-de-header: valor"
+            headers_raw = re.sub(r"\s+(?=[A-Za-z0-9-]+:\s)", "\n", headers_raw)
         ytmusicapi.setup(filepath=YT_AUTH, headers_raw=headers_raw)
         with open(YT_AUTH) as f:
             setting_set("yt_auth", f.read())
