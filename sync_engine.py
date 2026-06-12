@@ -620,14 +620,25 @@ class SyncEngine:
         return out
 
     def refresh_playlists(self, uid):
-        """Trae playlists de Spotify y las refleja en DB (sin borrar estado)."""
+        """Trae playlists de Spotify y las refleja en DB: agrega/actualiza las
+        vigentes y elimina (con su progreso) las que ya no existen en Spotify."""
         pls = self.fetch_playlists(uid)
+        current_ids = {p["sp_id"] for p in pls}
         with db() as c:
             for p in pls:
                 c.execute("""INSERT INTO playlists(uid,sp_id,name,total) VALUES(%s,%s,%s,%s)
                              ON CONFLICT(uid,sp_id) DO UPDATE SET name=EXCLUDED.name,
                              total=EXCLUDED.total""",
                           (uid, p["sp_id"], p["name"], p["total"]))
+            c.execute("SELECT sp_id, name FROM playlists WHERE uid=%s", (uid,))
+            removed = [r for r in c.fetchall() if r["sp_id"] not in current_ids]
+            for r in removed:
+                c.execute("DELETE FROM tracks WHERE uid=%s AND sp_playlist_id=%s",
+                          (uid, r["sp_id"]))
+                c.execute("DELETE FROM playlists WHERE uid=%s AND sp_id=%s",
+                          (uid, r["sp_id"]))
+        for r in removed:
+            self.log(uid, f"  🗑 Playlist eliminada en Spotify: {r['name']}", "info")
         return self.playlists_view(uid)
 
     def playlists_view(self, uid):
