@@ -152,16 +152,17 @@ h2{font:700 15px var(--disp);letter-spacing:.03em}
 .switch input:checked + .slider{background:var(--sp)}
 .switch input:checked + .slider:before{transform:translateX(20px);background:#fff}
 
-/* ── tabs ─────────────────────────────── */
-.tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--line)}
-.tab{font:600 13px var(--disp);padding:10px 20px;cursor:pointer;
-  background:transparent;color:var(--muted);border:none;border-bottom:2px solid transparent;
-  transition:.15s}
-.tab:hover{color:var(--ink)}
-.tab.active{color:var(--ink);border-bottom-color:var(--sp)}
-.tab-content{display:none}
-.tab-content.active{display:block}
-.log-full{font-size:12px;max-height:70vh;overflow-y:auto;
+/* ── playlists + consola ───────────────── */
+.main-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;
+  margin-bottom:18px;align-items:start}
+.console-panel summary{cursor:pointer;font:700 15px var(--disp);
+  letter-spacing:.03em;list-style:none;display:flex;align-items:center;
+  justify-content:space-between;gap:10px}
+.console-panel summary::-webkit-details-marker{display:none}
+.console-panel summary .log-meta{margin:0;font:500 11px var(--mono);color:var(--muted)}
+.console-panel[open] summary{margin-bottom:12px}
+.console-panel .log-filters{margin-bottom:10px}
+.log-full{font-size:12px;max-height:50vh;overflow-y:auto;
   display:flex;flex-direction:column;gap:3px;padding:4px 0}
 .log-full .t{color:var(--muted);margin-right:8px}
 .log-full .ok{color:var(--sp)}
@@ -212,6 +213,7 @@ dialog input,dialog textarea{
   .node.yt{grid-area:yt;text-align:right;align-items:flex-end}
   .beam-track{grid-area:track}
   .grid-2{grid-template-columns:1fr}
+  .main-grid{grid-template-columns:1fr}
   .row .meta{width:100%;order:5}
 }
 :focus-visible{outline:2px solid var(--sp);outline-offset:2px}

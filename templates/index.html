@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 
@@ -78,68 +78,55 @@
   </div>
 </section>
 
-<!-- ───────────────────────────── playlists -->
-<section class="panel">
-  <div class="panel-head">
-    <h2>Playlists</h2>
-    <div class="actions">
-      <input type="text" id="pl-filter" class="pl-filter" placeholder="🔎 Filtrar por nombre…" oninput="renderPlaylists()">
-      <button class="btn ghost" onclick="loadPlaylists(true)">↻ Refrescar de Spotify</button>
-      <button class="btn primary" id="btn-sync" onclick="syncSelected()">Sincronizar seleccionadas</button>
-    </div>
-  </div>
-  <div class="pl-table-head" id="pl-table-head" style="display:none">
-    <label class="select-all">
-      <input type="checkbox" id="pl-select-all" onchange="toggleAll()"> Seleccionar todo
-    </label>
-    <span class="muted" id="pl-count"></span>
-  </div>
-  <div class="table" id="pl-table">
-    <div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>
-  </div>
-</section>
-
-<!-- ───────────────────────────── tabs -->
-<nav class="tabs">
-  <button class="tab active" data-tab="sync" onclick="switchTab('sync')">Sincronización</button>
-  <button class="tab" data-tab="log" onclick="switchTab('log')">📋 Registro</button>
-</nav>
-
-<section id="tab-sync" class="tab-content active">
-  <!-- scheduler -->
-  <section class="panel">
-    <div class="panel-head"><h2>Sync automática</h2></div>
-    <div class="sched">
-      <label class="switch">
-        <input type="checkbox" id="sched-on" onchange="saveScheduler()">
-        <span class="slider"></span>
-      </label>
-      <span>cada</span>
-      <input type="number" id="sched-hours" value="24" min="1" max="168" onchange="saveScheduler()">
-      <span>horas</span>
-      <span class="muted" id="sched-last"></span>
-    </div>
-  </section>
-</section>
-
-<section id="tab-log" class="tab-content">
+<!-- ───────────────────────────── playlists + consola -->
+<div class="main-grid">
   <section class="panel">
     <div class="panel-head">
-      <h2>Registro</h2>
+      <h2>Playlists</h2>
       <div class="actions">
-        <div class="log-filters" id="log-filters">
-          <button class="lf active" data-lvl="all" onclick="setLogFilter('all')">Todos</button>
-          <button class="lf" data-lvl="ok" onclick="setLogFilter('ok')">✓ OK</button>
-          <button class="lf" data-lvl="warn" onclick="setLogFilter('warn')">⚠ Avisos</button>
-          <button class="lf" data-lvl="error" onclick="setLogFilter('error')">✗ Errores</button>
-        </div>
-        <button class="btn ghost" onclick="copyLog()">⧉ Copiar</button>
-        <button class="btn ghost" onclick="clearLog()">🗑 Limpiar</button>
+        <input type="text" id="pl-filter" class="pl-filter" placeholder="🔎 Filtrar por nombre…" oninput="renderPlaylists()">
+        <button class="btn ghost" onclick="loadPlaylists(true)">↻ Refrescar de Spotify</button>
+        <button class="btn primary" id="btn-sync" onclick="syncSelected()">Sincronizar seleccionadas</button>
       </div>
     </div>
-    <div class="log-meta muted" id="log-meta"></div>
-    <div class="log-full" id="log"></div>
+    <div class="pl-table-head" id="pl-table-head" style="display:none">
+      <label class="select-all">
+        <input type="checkbox" id="pl-select-all" onchange="toggleAll()"> Seleccionar todo
+      </label>
+      <span class="muted" id="pl-count"></span>
+    </div>
+    <div class="table" id="pl-table">
+      <div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>
+    </div>
   </section>
+
+  <details class="panel console-panel" id="console-panel" open>
+    <summary>📋 Consola <span class="log-meta muted" id="log-meta"></span></summary>
+    <div class="log-filters" id="log-filters">
+      <button class="lf active" data-lvl="all" onclick="setLogFilter('all')">Todos</button>
+      <button class="lf" data-lvl="ok" onclick="setLogFilter('ok')">✓ OK</button>
+      <button class="lf" data-lvl="warn" onclick="setLogFilter('warn')">⚠ Avisos</button>
+      <button class="lf" data-lvl="error" onclick="setLogFilter('error')">✗ Errores</button>
+      <button class="btn ghost" onclick="copyLog()">⧉</button>
+      <button class="btn ghost" onclick="clearLog()">🗑</button>
+    </div>
+    <div class="log-full" id="log"></div>
+  </details>
+</div>
+
+<!-- ───────────────────────────── sync automática -->
+<section class="panel">
+  <div class="panel-head"><h2>Sync automática</h2></div>
+  <div class="sched">
+    <label class="switch">
+      <input type="checkbox" id="sched-on" onchange="saveScheduler()">
+      <span class="slider"></span>
+    </label>
+    <span>cada</span>
+    <input type="number" id="sched-hours" value="24" min="1" max="168" onchange="saveScheduler()">
+    <span>horas</span>
+    <span class="muted" id="sched-last"></span>
+  </div>
 </section>
 
 <!-- ───────────────────────────── panel conectar YT Music -->
@@ -214,6 +201,6 @@
   </div>
 </dialog>
 
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

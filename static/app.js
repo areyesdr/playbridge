@@ -6,12 +6,6 @@ let logFilter = "all";
 let lastYtWasOk = false;
 const LOG_KEY = "playbridge_log";
 
-/* ── tabs ─────────────────────────────── */
-function switchTab(name) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === "tab-" + name));
-}
-
 /* ── log persistido en localStorage ───── */
 function setLogFilter(lvl) {
   logFilter = lvl;
