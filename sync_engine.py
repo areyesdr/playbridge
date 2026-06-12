@@ -226,8 +226,22 @@ class SyncEngine:
 
     def snapshot(self, uid):
         s = self.st(uid)
-        # flags perezosos: el token/headers viven en DB, válidos entre reinicios
-        if not s["spotify_ok"]:
+        # flags perezosos: validar cada ~30s que el token siga vivo
+        now = time.time()
+        if s["spotify_ok"]:
+            last_check = setting_get(f"sp_check:{uid}")
+            if not last_check or now - float(last_check) > 30:
+                try:
+                    sp = self.sp(uid)
+                    if sp:
+                        sp.current_user()
+                        s["spotify_ok"] = True
+                    else:
+                        s["spotify_ok"] = False
+                except Exception:
+                    s["spotify_ok"] = False
+                setting_set(f"sp_check:{uid}", str(now))
+        else:
             s["spotify_ok"] = DEMO or bool(setting_get(f"sp_token:{uid}"))
         if not s["yt_ok"]:
             s["yt_ok"] = DEMO or setting_get(f"yt_ok:{uid}") == "1"
