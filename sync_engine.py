@@ -37,8 +37,30 @@ _pool = None
 def _get_pool():
     global _pool
     if _pool is None:
-        _pool = ThreadedConnectionPool(2, 10, DATABASE_URL)
+        _pool = ThreadedConnectionPool(
+            2, 10, DATABASE_URL,
+            # keepalives TCP: evita que el pooler de Supabase corte conexiones idle
+            keepalives=1, keepalives_idle=30,
+            keepalives_interval=10, keepalives_count=3,
+        )
     return _pool
+
+
+def _checkout():
+    """Saca una conexión VIVA del pool (pre-ping).
+    El pooler de Supabase cierra conexiones inactivas; sin esto el pool
+    entrega conexiones muertas → 'SSL SYSCALL error: EOF detected'."""
+    pool = _get_pool()
+    for _ in range(3):
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as ping:
+                ping.execute("SELECT 1")
+            conn.rollback()  # cierra la transacción del ping
+            return conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            pool.putconn(conn, close=True)  # descartar y reintentar con una nueva
+    return pool.getconn()
 
 
 class _SQLiteCursor:
@@ -64,17 +86,20 @@ def db():
     PostgreSQL si hay DATABASE_URL (deploy), SQLite local si no (PC/Termux/demo)."""
     if USE_PG:
         pool = _get_pool()
-        conn = pool.getconn()
+        conn = _checkout()
         try:
             conn.autocommit = False
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 yield cur
             conn.commit()
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass  # conexión ya cerrada: no enmascarar el error original
             raise
         finally:
-            pool.putconn(conn)
+            pool.putconn(conn, close=bool(conn.closed))
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
