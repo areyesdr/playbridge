@@ -805,6 +805,12 @@ class SyncEngine:
             for r in res:
                 if r.get("videoId"):
                     return r["videoId"]
+            # algunas pistas no están en el catálogo "songs" pero sí como
+            # video/lyric video: reintentar con un filtro más amplio
+            res = client.search(q, filter="videos", limit=3)
+            for r in res:
+                if r.get("videoId"):
+                    return r["videoId"]
         except Exception as e:
             if self._is_auth_error(e):
                 raise YTAuthError(f"sesión de YT Music expirada: {e}")
