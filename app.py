@@ -127,7 +127,8 @@ def api_scheduler():
 def api_config():
     if request.method == "POST":
         data = request.get_json(force=True)
-        for k in ("sp_client_id", "sp_client_secret", "sp_redirect"):
+        for k in ("sp_client_id", "sp_client_secret", "sp_redirect",
+                  "yt_client_id", "yt_client_secret"):
             if k in data and data[k]:
                 setting_set(k, data[k].strip())
         return jsonify({"ok": True})
@@ -137,7 +138,31 @@ def api_config():
                                    os.getenv("SPOTIFY_REDIRECT_URI",
                                              "http://localhost:5000/callback")),
         "has_secret": bool(setting_get("sp_client_secret")),
+        "yt_client_id": setting_get("yt_client_id",
+                                    os.getenv("YT_CLIENT_ID", "")),
+        "has_yt_secret": bool(setting_get("yt_client_secret") or
+                              os.getenv("YT_CLIENT_SECRET")),
     })
+
+
+@app.route("/api/yt/oauth/start", methods=["POST"])
+def api_yt_oauth_start():
+    if not engine.yt_oauth_creds():
+        return jsonify({"error": "Login con Google no configurado. El administrador debe "
+                                 "definir YT_CLIENT_ID y YT_CLIENT_SECRET (o ⚙ Config). "
+                                 "Mientras tanto usa la opción de headers."}), 400
+    try:
+        return jsonify(engine.yt_oauth_start(uid()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/yt/oauth/poll", methods=["POST"])
+def api_yt_oauth_poll():
+    try:
+        return jsonify(engine.yt_oauth_poll(uid()))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/yt/setup", methods=["POST"])

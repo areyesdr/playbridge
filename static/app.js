@@ -116,6 +116,33 @@ function connectSpotify() {
   window.location = "/spotify/login";
 }
 
+/* ───────────────────────── OAuth Google para YT Music (device flow) */
+let ytPollTimer = null;
+
+async function startYtOauth() {
+  const res = await (await fetch("/api/yt/oauth/start", { method: "POST" })).json();
+  if (res.error) { toast(res.error, "error", 7000); return; }
+  $("yt-oauth-code").textContent = res.code;
+  $("yt-oauth-link").href = res.url;
+  $("yt-oauth-box").style.display = "block";
+  $("yt-oauth-status").textContent = "esperando autorización…";
+  clearInterval(ytPollTimer);
+  ytPollTimer = setInterval(async () => {
+    try {
+      const r = await (await fetch("/api/yt/oauth/poll", { method: "POST" })).json();
+      if (r.ok) {
+        clearInterval(ytPollTimer);
+        closePanel("yt");
+        toast("YouTube Music conectado ✓", "ok");
+      } else if (r.error && !r.pending) {
+        clearInterval(ytPollTimer);
+        $("yt-oauth-status").textContent = "error: " + r.error;
+        toast(r.error, "error", 6000);
+      }
+    } catch (e) { /* red intermitente: seguir intentando */ }
+  }, 4000);
+}
+
 async function saveYtHeaders() {
   const res = await (await fetch("/api/yt/setup", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -132,6 +159,8 @@ async function saveConfig() {
       sp_client_id: $("cfg-id").value,
       sp_client_secret: $("cfg-secret").value,
       sp_redirect: $("cfg-redirect").value,
+      yt_client_id: $("cfg-yt-id").value,
+      yt_client_secret: $("cfg-yt-secret").value,
     }),
   });
   closePanel("cfg");
@@ -142,6 +171,7 @@ async function loadConfig() {
   const c = await (await fetch("/api/config")).json();
   $("cfg-id").value = c.sp_client_id;
   $("cfg-redirect").value = c.sp_redirect;
+  $("cfg-yt-id").value = c.yt_client_id || "";
 }
 
 async function saveScheduler() {
@@ -156,7 +186,10 @@ async function saveScheduler() {
 
 /* ───────────────────────── helpers */
 function openPanel(n) { if (n === "cfg") loadConfig(); $("panel-" + n).showModal(); }
-function closePanel(n) { $("panel-" + n).close(); }
+function closePanel(n) {
+  if (n === "yt") clearInterval(ytPollTimer);
+  $("panel-" + n).close();
+}
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (m) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));

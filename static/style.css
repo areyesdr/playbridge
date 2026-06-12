@@ -156,3 +156,15 @@ dialog input,dialog textarea{
 .toast.ok{border-color:var(--sp)}
 .toast.error{border-color:var(--yt)}
 .toast.warn{border-color:#E8B33C}
+
+/* ── OAuth YT Music ─────────────────── */
+.yt-option{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.device-code{
+  font:700 30px var(--disp);letter-spacing:.14em;text-align:center;
+  background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:14px;margin:8px 0;color:var(--sp);user-select:all}
+#yt-oauth-box p{font-size:12.5px;margin:4px 0}
+#yt-oauth-box a{color:var(--sp)}
+.yt-advanced{border-top:1px solid var(--line);padding-top:12px}
+.yt-advanced summary{cursor:pointer;font-size:12px}
+.yt-advanced[open] summary{margin-bottom:10px}

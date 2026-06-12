@@ -90,29 +90,52 @@
   </section>
 </div>
 
-<!-- ───────────────────────────── panel YT headers -->
+<!-- ───────────────────────────── panel conectar YT Music -->
 <dialog id="panel-yt">
   <h3>Conectar YouTube Music</h3>
-  <ol class="steps">
-    <li>Abre <b>music.youtube.com</b> con sesión iniciada</li>
-    <li>F12 → pestaña <b>Red</b> → filtra <code>/browse</code></li>
-    <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
-    <li>Pégalos aquí:</li>
-  </ol>
-  <textarea id="yt-headers" rows="8" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+
+  <div class="yt-option">
+    <p class="muted">Inicia sesión con tu cuenta de Google — sin copiar nada raro.</p>
+    <button class="btn primary" id="btn-yt-oauth" onclick="startYtOauth()">
+      Iniciar sesión con Google
+    </button>
+    <div id="yt-oauth-box" style="display:none">
+      <p>1 · Abre <a id="yt-oauth-link" href="#" target="_blank" rel="noopener">google.com/device</a></p>
+      <p>2 · Ingresa este código:</p>
+      <div class="device-code" id="yt-oauth-code">····-····</div>
+      <p class="muted" id="yt-oauth-status">esperando autorización…</p>
+    </div>
+  </div>
+
+  <details class="yt-advanced">
+    <summary class="muted">Opción avanzada — pegar headers del navegador</summary>
+    <ol class="steps">
+      <li>Abre <b>music.youtube.com</b> con sesión iniciada</li>
+      <li>F12 → pestaña <b>Red</b> → filtra <code>/browse</code></li>
+      <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
+      <li>Pégalos aquí:</li>
+    </ol>
+    <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+    <div class="dialog-actions">
+      <button class="btn primary" onclick="saveYtHeaders()">Guardar y conectar</button>
+    </div>
+  </details>
+
   <div class="dialog-actions">
-    <button class="btn ghost" onclick="closePanel('yt')">Cancelar</button>
-    <button class="btn primary" onclick="saveYtHeaders()">Guardar y conectar</button>
+    <button class="btn ghost" onclick="closePanel('yt')">Cerrar</button>
   </div>
 </dialog>
 
 <!-- ───────────────────────────── panel config Spotify -->
 <dialog id="panel-cfg">
-  <h3>Credenciales Spotify</h3>
-  <p class="muted">Crea una app en <b>developer.spotify.com/dashboard</b> y añade la Redirect URI exacta.</p>
-  <label>Client ID <input type="text" id="cfg-id"></label>
-  <label>Client Secret <input type="password" id="cfg-secret" placeholder="(sin cambios)"></label>
+  <h3>Credenciales (administrador)</h3>
+  <p class="muted">Spotify: crea una app en <b>developer.spotify.com/dashboard</b> con la Redirect URI exacta.</p>
+  <label>Spotify Client ID <input type="text" id="cfg-id"></label>
+  <label>Spotify Client Secret <input type="password" id="cfg-secret" placeholder="(sin cambios)"></label>
   <label>Redirect URI <input type="text" id="cfg-redirect"></label>
+  <p class="muted" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada.</p>
+  <label>Google Client ID <input type="text" id="cfg-yt-id"></label>
+  <label>Google Client Secret <input type="password" id="cfg-yt-secret" placeholder="(sin cambios)"></label>
   <div class="dialog-actions">
     <button class="btn ghost" onclick="closePanel('cfg')">Cancelar</button>
     <button class="btn primary" onclick="saveConfig()">Guardar</button>

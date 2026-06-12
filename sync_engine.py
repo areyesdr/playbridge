@@ -283,9 +283,60 @@ class SyncEngine:
                 return None
             with open(path, "w") as f:
                 f.write(saved)
-        client = YTMusic(path)
+        # el archivo puede ser headers de navegador o token OAuth de Google
+        try:
+            with open(path) as f:
+                is_oauth = "refresh_token" in json.load(f)
+        except Exception:
+            is_oauth = False
+        if is_oauth:
+            client = YTMusic(path, oauth_credentials=self.yt_oauth_creds())
+        else:
+            client = YTMusic(path)
         self.yt_clients[uid] = client
         return client
+
+    # ------------------------------------------------ OAuth Google (YT Music)
+    def yt_oauth_creds(self):
+        """Credenciales del cliente OAuth de Google (tipo 'TV y dispositivos
+        de entrada limitada' con YouTube Data API v3 habilitada)."""
+        from ytmusicapi.auth.oauth import OAuthCredentials
+        cid = setting_get("yt_client_id") or os.getenv("YT_CLIENT_ID", "")
+        sec = setting_get("yt_client_secret") or os.getenv("YT_CLIENT_SECRET", "")
+        if not (cid and sec):
+            return None
+        return OAuthCredentials(client_id=cid, client_secret=sec)
+
+    def yt_oauth_start(self, uid):
+        """Device flow: devuelve código y URL para que el usuario autorice."""
+        creds = self.yt_oauth_creds()
+        code = creds.get_code()
+        setting_set(f"yt_device:{uid}", code["device_code"])
+        return {"url": f"{code['verification_url']}?user_code={code['user_code']}",
+                "code": code["user_code"]}
+
+    def yt_oauth_poll(self, uid):
+        """Consulta si el usuario ya autorizó; al confirmarse guarda el token."""
+        creds = self.yt_oauth_creds()
+        device = setting_get(f"yt_device:{uid}")
+        if not (creds and device):
+            return {"ok": False, "error": "Flujo no iniciado"}
+        raw = creds.token_from_code(device)
+        if "access_token" not in raw:
+            return {"ok": False, "pending": True}
+        token = {
+            "scope": raw["scope"], "token_type": raw["token_type"],
+            "access_token": raw["access_token"],
+            "refresh_token": raw["refresh_token"],
+            "expires_at": int(time.time()) + raw["expires_in"],
+            "expires_in": raw.get("refresh_token_expires_in", raw["expires_in"]),
+        }
+        with open(self._yt_path(uid), "w") as f:
+            json.dump(token, f)
+        setting_set(f"yt_auth:{uid}", json.dumps(token))
+        setting_set(f"yt_device:{uid}", "")
+        self.yt_clients.pop(uid, None)
+        return {"ok": self.connect_yt(uid)}
 
     def connect_yt(self, uid):
         if DEMO:
