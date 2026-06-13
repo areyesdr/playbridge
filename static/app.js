@@ -52,13 +52,15 @@ function logSave(entries) {
   try { localStorage.setItem(LOG_KEY, JSON.stringify(entries.slice(-500))); } catch (e) {}
 }
 
-function clearLog() {
+async function clearLog() {
+  if (!confirm("¿Borrar todo el registro?")) return;
+  try { localStorage.removeItem(LOG_KEY); } catch (e) {}
+  logRender([]);
   lastLogLen = 0;
-  if (confirm("¿Borrar todo el registro?")) {
-    try { localStorage.removeItem(LOG_KEY); } catch (e) {}
-    logRender([]);
-    toast("Registro limpiado.", "info");
-  }
+  try {
+    await fetch("/api/log/clear", { method: "POST" });
+  } catch (e) {}
+  toast("Registro limpiado.", "info");
 }
 
 function copyLog() {

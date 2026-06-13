@@ -237,6 +237,12 @@ class SyncEngine:
             s["log"] = s["log"][-300:]
             setting_set(f"log:{uid}", json.dumps(s["log"]))
 
+    def clear_log(self, uid):
+        s = self.st(uid)
+        with self.lock:
+            s["log"] = []
+            setting_set(f"log:{uid}", "[]")
+
     def snapshot(self, uid):
         """Estado para el dashboard: lee el último resultado conocido en DB,
         sin llamar a Spotify/YT Music. La validación real contra esas APIs

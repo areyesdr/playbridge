@@ -89,6 +89,12 @@ def api_status():
     return jsonify(engine.snapshot(uid()))
 
 
+@app.route("/api/log/clear", methods=["POST"])
+def api_log_clear():
+    engine.clear_log(uid())
+    return jsonify({"ok": True})
+
+
 @app.route("/api/playlists")
 def api_playlists():
     u = uid()
