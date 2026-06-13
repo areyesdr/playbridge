@@ -248,20 +248,33 @@ class SyncEngine:
             s["spotify_user"] = "Demo User"
         elif setting_get(f"sp_token:{uid}"):
             # token presente: validar cada ~30s que siga vivo
-            last_check = setting_get(f"sp_check:{uid}")
-            if not last_check or now - float(last_check) > 30:
-                try:
-                    sp = self.sp(uid)
-                    me = sp.current_user() if sp else None
-                    if me:
-                        s["spotify_ok"] = True
-                        s["spotify_user"] = me.get("display_name") or me.get("id")
-                        setting_set(f"sp_user:{uid}", s["spotify_user"])
-                    else:
+            retry_until = setting_get(f"sp_retry_after:{uid}")
+            if retry_until and now < float(retry_until):
+                # Spotify nos pidió esperar (429): no volver a llamar hasta entonces
+                s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
+            else:
+                last_check = setting_get(f"sp_check:{uid}")
+                if not last_check or now - float(last_check) > 30:
+                    try:
+                        sp = self.sp(uid)
+                        me = sp.current_user() if sp else None
+                        if me:
+                            s["spotify_ok"] = True
+                            s["spotify_user"] = me.get("display_name") or me.get("id")
+                            setting_set(f"sp_user:{uid}", s["spotify_user"])
+                        else:
+                            s["spotify_ok"] = False
+                    except spotipy.SpotifyException as e:
                         s["spotify_ok"] = False
-                except Exception:
-                    s["spotify_ok"] = False
-                setting_set(f"sp_check:{uid}", str(now))
+                        if e.http_status == 429:
+                            wait = float(e.headers.get("Retry-After", 60) or 60)
+                            setting_set(f"sp_retry_after:{uid}", str(now + wait))
+                    except Exception:
+                        s["spotify_ok"] = False
+                    setting_set(f"sp_check:{uid}", str(now))
+                    setting_set(f"sp_ok:{uid}", "1" if s["spotify_ok"] else "0")
+                else:
+                    s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
             if not s.get("spotify_user"):
                 s["spotify_user"] = setting_get(f"sp_user:{uid}")
             s["spotify_state"] = "ok" if s["spotify_ok"] else "expired"
