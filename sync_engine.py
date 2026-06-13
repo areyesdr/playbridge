@@ -254,7 +254,7 @@ class SyncEngine:
                 s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
             else:
                 last_check = setting_get(f"sp_check:{uid}")
-                if not last_check or now - float(last_check) > 30:
+                if not last_check or now - float(last_check) > 120:
                     try:
                         sp = self.sp(uid)
                         me = sp.current_user() if sp else None
@@ -292,9 +292,9 @@ class SyncEngine:
         else:
             method = self._yt_auth_method(uid)
             if method:
-                # auth presente: validar cada ~60s que siga viva
+                # auth presente: validar cada ~120s que siga viva
                 last_check = setting_get(f"yt_check:{uid}")
-                if not last_check or now - float(last_check) > 60:
+                if not last_check or now - float(last_check) > 120:
                     try:
                         client = self.yt(uid)
                         if client:

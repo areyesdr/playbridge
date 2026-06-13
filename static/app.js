@@ -152,7 +152,7 @@ function onPillClick(kind) {
   }
 }
 
-/* ───────────────────────── estado (polling cada 1.5s) */
+/* ───────────────────────── estado (polling cada 1.5s, 30s si la pestaña está oculta) */
 async function poll() {
   try {
     const s = await (await fetch("/api/status?t=" + Date.now())).json();
@@ -209,8 +209,18 @@ async function poll() {
     $("sched-last").textContent = s.scheduler.last_run
       ? "última: " + s.scheduler.last_run.replace("T", " ") : "";
   } catch (e) { /* servidor reiniciando */ }
-  setTimeout(poll, 1500);
+  pollTimer = setTimeout(poll, document.hidden ? 30000 : 1500);
 }
+
+let pollTimer = null;
+// pestaña en segundo plano: bajar frecuencia para no acumular llamadas
+// a las APIs de Spotify/YT Music mientras nadie la está viendo
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    clearTimeout(pollTimer);
+    poll();
+  }
+});
 
 /* ───────────────────────── playlists */
 let allPlaylists = [];
