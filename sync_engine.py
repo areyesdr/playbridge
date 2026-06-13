@@ -238,52 +238,26 @@ class SyncEngine:
             setting_set(f"log:{uid}", json.dumps(s["log"]))
 
     def snapshot(self, uid):
+        """Estado para el dashboard: lee el último resultado conocido en DB,
+        sin llamar a Spotify/YT Music. La validación real contra esas APIs
+        ocurre solo en el momento de uso (ver verify_spotify/verify_yt)."""
         s = self.st(uid)
-        now = time.time()
 
-        # ---- Spotify: estado + datos de la cuenta conectada ----
+        # ---- Spotify: último estado conocido ----
         if DEMO:
             s["spotify_ok"] = True
             s["spotify_state"] = "ok"
             s["spotify_user"] = "Demo User"
         elif setting_get(f"sp_token:{uid}"):
-            # token presente: validar cada ~30s que siga vivo
-            retry_until = setting_get(f"sp_retry_after:{uid}")
-            if retry_until and now < float(retry_until):
-                # Spotify nos pidió esperar (429): no volver a llamar hasta entonces
-                s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
-            else:
-                last_check = setting_get(f"sp_check:{uid}")
-                if not last_check or now - float(last_check) > 120:
-                    try:
-                        sp = self.sp(uid)
-                        me = sp.current_user() if sp else None
-                        if me:
-                            s["spotify_ok"] = True
-                            s["spotify_user"] = me.get("display_name") or me.get("id")
-                            setting_set(f"sp_user:{uid}", s["spotify_user"])
-                        else:
-                            s["spotify_ok"] = False
-                    except spotipy.SpotifyException as e:
-                        s["spotify_ok"] = False
-                        if e.http_status == 429:
-                            wait = float(e.headers.get("Retry-After", 60) or 60)
-                            setting_set(f"sp_retry_after:{uid}", str(now + wait))
-                    except Exception:
-                        s["spotify_ok"] = False
-                    setting_set(f"sp_check:{uid}", str(now))
-                    setting_set(f"sp_ok:{uid}", "1" if s["spotify_ok"] else "0")
-                else:
-                    s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
-            if not s.get("spotify_user"):
-                s["spotify_user"] = setting_get(f"sp_user:{uid}")
+            s["spotify_ok"] = setting_get(f"sp_ok:{uid}") == "1"
+            s["spotify_user"] = setting_get(f"sp_user:{uid}")
             s["spotify_state"] = "ok" if s["spotify_ok"] else "expired"
         else:
             s["spotify_ok"] = False
             s["spotify_state"] = "off"
             s["spotify_user"] = None
 
-        # ---- YT Music: estado + método de autenticación ----
+        # ---- YT Music: último estado conocido ----
         if DEMO:
             s["yt_ok"] = True
             s["yt_state"] = "ok"
@@ -292,29 +266,7 @@ class SyncEngine:
         else:
             method = self._yt_auth_method(uid)
             if method:
-                # auth presente: validar cada ~120s que siga viva
-                last_check = setting_get(f"yt_check:{uid}")
-                if not last_check or now - float(last_check) > 120:
-                    try:
-                        client = self.yt(uid)
-                        if client:
-                            info = client.get_account_info()
-                            s["yt_ok"] = True
-                            name = info.get("accountName")
-                            if name:
-                                setting_set(f"yt_user:{uid}", name)
-                        else:
-                            s["yt_ok"] = False
-                    except Exception as e:
-                        if self._is_definite_auth_error(e):
-                            s["yt_ok"] = False
-                        else:
-                            # error transitorio/desconocido (ej. 400 "invalid
-                            # argument" intermitente vía OAuth): no marcar como
-                            # expirado, mantener el estado previo
-                            s["yt_ok"] = setting_get(f"yt_ok:{uid}") == "1"
-                    setting_set(f"yt_check:{uid}", str(now))
-                    setting_set(f"yt_ok:{uid}", "1" if s["yt_ok"] else "0")
+                s["yt_ok"] = setting_get(f"yt_ok:{uid}") == "1"
                 s["yt_state"] = "ok" if s["yt_ok"] else "expired"
                 s["yt_method"] = method
                 s["yt_user"] = setting_get(f"yt_user:{uid}")
@@ -326,6 +278,53 @@ class SyncEngine:
 
         with self.lock:
             return json.loads(json.dumps(s))
+
+    # ------------------------------------------------ verificación on-demand
+    def verify_spotify(self, uid):
+        """Revalida el token de Spotify contra la API en el momento de uso
+        (antes de listar playlists o sincronizar). Cachea el resultado ~120s
+        y respeta Retry-After si Spotify devuelve 429."""
+        if DEMO:
+            return True
+        if not setting_get(f"sp_token:{uid}"):
+            return False
+        now = time.time()
+        retry_until = setting_get(f"sp_retry_after:{uid}")
+        if retry_until and now < float(retry_until):
+            return setting_get(f"sp_ok:{uid}") == "1"
+        last_check = setting_get(f"sp_check:{uid}")
+        if last_check and now - float(last_check) <= 120:
+            return setting_get(f"sp_ok:{uid}") == "1"
+        ok = False
+        try:
+            sp = self.sp(uid)
+            me = sp.current_user() if sp else None
+            if me:
+                ok = True
+                setting_set(f"sp_user:{uid}", me.get("display_name") or me.get("id"))
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                wait = float(e.headers.get("Retry-After", 60) or 60)
+                setting_set(f"sp_retry_after:{uid}", str(now + wait))
+        except Exception:
+            pass
+        setting_set(f"sp_check:{uid}", str(now))
+        setting_set(f"sp_ok:{uid}", "1" if ok else "0")
+        return ok
+
+    def verify_yt(self, uid):
+        """Revalida la sesión de YT Music en el momento de uso, con caché
+        de ~120s para no repetir la llamada en clics seguidos."""
+        if DEMO:
+            return True
+        if not self._yt_auth_method(uid):
+            return False
+        now = time.time()
+        last_check = setting_get(f"yt_check:{uid}")
+        if last_check and now - float(last_check) <= 120:
+            return setting_get(f"yt_ok:{uid}") == "1"
+        setting_set(f"yt_check:{uid}", str(now))
+        return self.connect_yt(uid)
 
     # ------------------------------------------------ auth Spotify
     def oauth(self, uid):
@@ -350,15 +349,21 @@ class SyncEngine:
     def connect_spotify(self, uid):
         if DEMO:
             return True
+        now = time.time()
         try:
             client = self.sp(uid)
             if client is None:
                 return False
-            client.current_user()  # valida token
+            me = client.current_user()  # valida token
+            setting_set(f"sp_user:{uid}", me.get("display_name") or me.get("id"))
+            setting_set(f"sp_ok:{uid}", "1")
+            setting_set(f"sp_check:{uid}", str(now))
             self.st(uid)["spotify_ok"] = True
             return True
         except Exception as e:
             self.log(uid, f"Spotify: {e}", "error")
+            setting_set(f"sp_ok:{uid}", "0")
+            setting_set(f"sp_check:{uid}", str(now))
             self.st(uid)["spotify_ok"] = False
             return False
 
@@ -978,8 +983,7 @@ class SyncEngine:
                     elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
                     if elapsed < hours * 3600:
                         continue
-                if not (setting_get(f"sp_token:{uid}") and
-                        setting_get(f"yt_ok:{uid}") == "1"):
+                if not (self.verify_spotify(uid) and self.verify_yt(uid)):
                     continue
                 self.log(uid, "⏰ Sync automática programada", "info")
                 now = datetime.now().isoformat(timespec="seconds")
