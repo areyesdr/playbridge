@@ -235,12 +235,21 @@ function coverColor(name) {
 }
 
 async function loadPlaylists(refresh) {
-  const res = await fetch("/api/playlists" + (refresh ? "?refresh=1" : ""));
-  const data = await res.json();
-  if (data.error) { toast(esc(data.error), "error"); return; }
-  if (refresh) toast(`Se cargaron <b>${data.length} playlists</b> desde Spotify.`, "ok");
-  allPlaylists = data;
-  renderPlaylists();
+  const btn = $("sp-refresh");
+  if (refresh && btn) btn.classList.add("loading");
+  if (!refresh && !allPlaylists.length) {
+    $("pl-list").innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando playlists…</div>`;
+  }
+  try {
+    const res = await fetch("/api/playlists" + (refresh ? "?refresh=1" : ""));
+    const data = await res.json();
+    if (data.error) { toast(esc(data.error), "error"); return; }
+    if (refresh) toast(`Se cargaron <b>${data.length} playlists</b> desde Spotify.`, "ok");
+    allPlaylists = data;
+    renderPlaylists();
+  } finally {
+    if (refresh && btn) btn.classList.remove("loading");
+  }
 }
 
 function renderPlaylists() {
@@ -350,7 +359,7 @@ function renderYtPane() {
     btn.onclick = (e) => {
       e.stopPropagation();
       const { id, name } = btn.dataset;
-      if (btn.dataset.action === "resync") resyncPlaylist(id, name);
+      if (btn.dataset.action === "resync") resyncPlaylist(id, name, btn);
       else showMissing(id, name);
     };
   });
@@ -402,17 +411,25 @@ async function syncSelected() {
   else toast("Ya hay una migración en curso.", "warn");
 }
 
-async function resyncPlaylist(id, name) {
+async function resyncPlaylist(id, name, btn) {
   if (!confirm(`¿Forzar resincronización completa de «${name}»?\n\nSe borrará el progreso guardado y se volverá a crear/llenar la playlist en YT Music desde cero.`)) return;
-  const res = await (await fetch("/api/resync/" + id, { method: "POST" })).json();
+  if (btn) btn.classList.add("loading");
+  let res;
+  try {
+    res = await (await fetch("/api/resync/" + id, { method: "POST" })).json();
+  } finally {
+    if (btn) btn.classList.remove("loading");
+  }
   if (res.error) toast(esc(res.error), "error");
   else if (res.started) toast("Resincronización iniciada.", "ok");
   else toast("Ya hay una migración en curso.", "warn");
 }
 
 async function showMissing(id, name) {
-  const list = await (await fetch("/api/missing/" + id)).json();
   $("missing-title").textContent = `No encontradas — ${name}`;
+  $("missing-list").innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando canciones faltantes…</div>`;
+  openPanel("missing");
+  const list = await (await fetch("/api/missing/" + id)).json();
   $("missing-list").innerHTML = list
     .map((t, i) => `
       <div class="missing-row">
@@ -423,13 +440,12 @@ async function showMissing(id, name) {
         <div class="album-wrap" id="album-${i}"></div>
       </div>`).join("")
     || `<div class="ok">Nada pendiente ✓</div>`;
-  openPanel("missing");
 }
 
 async function toggleAlbum(i, trackId) {
   const wrap = $("album-" + i);
   if (wrap.innerHTML) { wrap.innerHTML = ""; return; }
-  wrap.innerHTML = `<div class="album-loading">Cargando álbum…</div>`;
+  wrap.innerHTML = `<div class="album-loading"><span class="spinner"></span> Cargando álbum…</div>`;
   const album = await (await fetch(`/api/track/${trackId}/album`)).json();
   if (album.error) { wrap.innerHTML = `<div class="warn">✗ ${esc(album.error)}</div>`; return; }
   wrap.innerHTML = `
@@ -460,7 +476,7 @@ async function togglePlTracks(btn, plId, refresh) {
   const wrap = $("pltracks-" + plId);
   if (wrap.innerHTML && !refresh) { wrap.innerHTML = ""; btn.textContent = "▾"; return; }
   btn.textContent = "▴";
-  wrap.innerHTML = `<div class="album-loading">Cargando canciones…</div>`;
+  wrap.innerHTML = `<div class="album-loading"><span class="spinner"></span> Cargando canciones…</div>`;
   const tracks = await (await fetch(`/api/playlist/${plId}/tracks` + (refresh ? "?refresh=1" : ""))).json();
   if (tracks.error) { wrap.innerHTML = `<div class="warn">✗ ${esc(tracks.error)}</div>`; return; }
   wrap.innerHTML = `
@@ -501,7 +517,7 @@ async function startYtOauth() {
   $("yt-oauth-code").textContent = res.code;
   $("yt-oauth-link").href = res.url;
   $("yt-oauth-box").style.display = "block";
-  $("yt-oauth-status").textContent = "esperando autorización…";
+  $("yt-oauth-status").innerHTML = '<span class="spinner"></span> esperando autorización…';
   clearInterval(ytPollTimer);
   ytPollTimer = setInterval(async () => {
     try {
@@ -519,35 +535,52 @@ async function startYtOauth() {
   }, 4000);
 }
 
-async function saveYtHeaders() {
-  const res = await (await fetch("/api/yt/setup", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ headers: $("yt-headers").value }),
-  })).json();
+async function saveYtHeaders(btn) {
+  if (btn) btn.classList.add("loading");
+  let res;
+  try {
+    res = await (await fetch("/api/yt/setup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ headers: $("yt-headers").value }),
+    })).json();
+  } finally {
+    if (btn) btn.classList.remove("loading");
+  }
   if (res.ok) { closePanel("yt"); toast("YouTube Music conectado.", "ok"); }
   else toast("Headers inválidos: " + esc(res.error || "revisa el formato"), "error", 6000);
 }
 
-async function saveConfig() {
-  await fetch("/api/config", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sp_client_id: $("cfg-id").value,
-      sp_client_secret: $("cfg-secret").value,
-      sp_redirect: $("cfg-redirect").value,
-      yt_client_id: $("cfg-yt-id").value,
-      yt_client_secret: $("cfg-yt-secret").value,
-    }),
-  });
+async function saveConfig(btn) {
+  if (btn) btn.classList.add("loading");
+  try {
+    await fetch("/api/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sp_client_id: $("cfg-id").value,
+        sp_client_secret: $("cfg-secret").value,
+        sp_redirect: $("cfg-redirect").value,
+        yt_client_id: $("cfg-yt-id").value,
+        yt_client_secret: $("cfg-yt-secret").value,
+      }),
+    });
+  } finally {
+    if (btn) btn.classList.remove("loading");
+  }
   closePanel("cfg");
   toast("Credenciales guardadas.", "ok");
 }
 
 async function loadConfig() {
-  const c = await (await fetch("/api/config")).json();
-  $("cfg-id").value = c.sp_client_id;
-  $("cfg-redirect").value = c.sp_redirect;
-  $("cfg-yt-id").value = c.yt_client_id || "";
+  const ids = ["cfg-id", "cfg-secret", "cfg-redirect", "cfg-yt-id", "cfg-yt-secret"];
+  ids.forEach((id) => $(id).disabled = true);
+  try {
+    const c = await (await fetch("/api/config")).json();
+    $("cfg-id").value = c.sp_client_id;
+    $("cfg-redirect").value = c.sp_redirect;
+    $("cfg-yt-id").value = c.yt_client_id || "";
+  } finally {
+    ids.forEach((id) => $(id).disabled = false);
+  }
 }
 
 async function saveScheduler() {

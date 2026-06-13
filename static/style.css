@@ -82,9 +82,11 @@ main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .btn-ghost:hover:not(:disabled){border-color:var(--faint);color:var(--txt);background:var(--panel-2)}
 .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:7px}
 .btn .spinner{display:none}
+.btn.loading{opacity:.6;pointer-events:none}
 .btn.loading .spinner{display:inline-block}
 .btn.loading .btn-label{opacity:.6}
-.spinner{width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;vertical-align:-2px}
+.loading-row{display:flex;align-items:center;gap:10px;padding:14px 16px;color:var(--faint)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* estado vacío dentro del panel */
@@ -126,6 +128,7 @@ button.badge{cursor:pointer;transition:all .12s}
 button.badge.ok:hover{background:var(--sp-dim)}
 button.badge.miss{color:var(--yt);border-color:rgba(255,77,77,.45)}
 button.badge.miss:hover{background:var(--yt-dim)}
+button.badge.loading{opacity:.6;pointer-events:none}
 
 /* checkbox grande genérico */
 input[type=checkbox].real{appearance:none;width:17px;height:17px;border-radius:5px;border:1.5px solid var(--faint);cursor:pointer;position:relative;transition:all .15s;flex-shrink:0}
@@ -202,7 +205,7 @@ input[type=checkbox].real:indeterminate::after{content:'–';position:absolute;i
 .preview-wrap iframe{border-radius:8px;display:block;margin:4px 0}
 
 .album-wrap{margin-top:8px}
-.album-loading{padding:10px;color:var(--faint)}
+.album-loading{padding:10px;color:var(--faint);display:flex;align-items:center;gap:8px}
 .album-head{display:flex;align-items:center;gap:10px;padding:6px 0}
 .album-cover{width:40px;height:40px;border-radius:6px;flex-shrink:0}
 .album-name{font-weight:600;color:var(--txt);flex:1}

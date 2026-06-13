@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=9">
+<link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
 
@@ -174,7 +174,7 @@
         <li>Pégalos aquí:</li>
       </ol>
       <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
-      <button class="btn btn-ghost" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
+      <button class="btn btn-ghost" onclick="saveYtHeaders(this)" style="margin-top:8px"><span class="spinner"></span><span class="btn-label">Guardar y conectar</span></button>
     </div>
   </details>
 
@@ -205,7 +205,7 @@
   <label for="cfg-yt-secret">Google Client Secret</label><input type="password" id="cfg-yt-secret" placeholder="(sin cambios)">
   <div class="dialog-actions">
     <button class="btn btn-ghost" onclick="closePanel('cfg')">Cancelar</button>
-    <button class="btn btn-sp" onclick="saveConfig()">Guardar</button>
+    <button class="btn btn-sp" onclick="saveConfig(this)"><span class="spinner"></span><span class="btn-label">Guardar</span></button>
   </div>
 </dialog>
 
@@ -221,6 +221,6 @@
 <!-- ===================== TOASTS ===================== -->
 <div class="toast-zone" id="toasts" aria-live="polite"></div>
 
-<script src="/static/app.js?v=6"></script>
+<script src="/static/app.js?v=10"></script>
 </body>
 </html>

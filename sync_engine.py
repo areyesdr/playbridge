@@ -377,7 +377,7 @@ class SyncEngine:
             self.st(uid)["spotify_ok"] = True
             return True
         except Exception as e:
-            self.log(uid, f"Spotify: {e}", "error")
+            self.log(uid, f"Spotify: {self._friendly_error(e, 'Spotify')}", "error")
             setting_set(f"sp_ok:{uid}", "0")
             setting_set(f"sp_check:{uid}", str(now))
             self.st(uid)["spotify_ok"] = False
@@ -494,18 +494,17 @@ class SyncEngine:
             setting_set(f"yt_ok:{uid}", "1")
             return True
         except Exception as e:
-            msg = str(e)
             if not self._is_definite_auth_error(e):
                 # error transitorio/desconocido (ej. 400 "invalid argument"
                 # intermitente vía OAuth): el token recién obtenido suele ser
                 # válido igual, así que no se bloquea la conexión por esto.
-                self.log(uid, f"YT Music: verificación de cuenta falló con un error "
-                               f"transitorio ({msg}), pero el inicio de sesión se "
-                               "guardó. Si la sincronización falla después, reconecta.", "warn")
+                self.log(uid, "YT Music: verificación de cuenta falló con un error "
+                               "transitorio, pero el inicio de sesión se guardó. "
+                               "Si la sincronización falla después, reconecta.", "warn")
                 self.st(uid)["yt_ok"] = True
                 setting_set(f"yt_ok:{uid}", "1")
                 return True
-            self.log(uid, f"YT Music: {msg}", "error")
+            self.log(uid, f"YT Music: {self._friendly_error(e, 'YouTube Music')}", "error")
             self.st(uid)["yt_ok"] = False
             setting_set(f"yt_ok:{uid}", "0")
             self.yt_clients.pop(uid, None)
@@ -933,6 +932,28 @@ class SyncEngine:
         msg = str(e)
         return any(k in msg for k in
                     ("401", "403", "Unauthorized", "UNAUTHENTICATED", "credentials"))
+
+    @staticmethod
+    def _friendly_error(e, service="Spotify"):
+        """Traduce errores técnicos de las APIs (OAuth, red, rate-limit, etc.)
+        a un mensaje que el usuario pueda entender y sobre el que pueda actuar."""
+        msg = str(e)
+        low = msg.lower()
+        if "invalid_client" in low or "failed to get client" in low:
+            return (f"Credenciales de {service} inválidas o no configuradas. "
+                    f"Revísalas en ⚙ Configuración.")
+        if any(k in low for k in ("invalid_grant", "invalid_token", "revoked", "token expired")):
+            return f"La autorización de {service} expiró o fue revocada. Reconecta tu cuenta."
+        if "429" in msg or any(k in low for k in ("rate/request limit", "too many requests", "rate limit")):
+            return f"{service} está limitando las solicitudes por exceso de tráfico. Espera unos minutos y vuelve a intentar."
+        if any(k in msg for k in ("401", "403")) or any(k in low for k in ("unauthorized", "unauthenticated", "forbidden")):
+            return f"La sesión de {service} no es válida o no tiene permisos suficientes. Reconéctala."
+        if any(k in low for k in ("connection", "timeout", "max retries", "failed to establish",
+                                   "name resolution", "temporarily unavailable", "network")):
+            return f"No se pudo conectar con {service}. Verifica tu conexión a internet e intenta de nuevo."
+        if any(k in msg for k in ("500", "502", "503")) or "server error" in low:
+            return f"{service} está teniendo problemas en sus servidores. Intenta de nuevo en unos minutos."
+        return f"No se pudo verificar la conexión con {service}. Si el problema persiste, reconecta tu cuenta."
 
     def _search_yt(self, uid, track):
         if DEMO:
