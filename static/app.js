@@ -414,16 +414,40 @@ async function showMissing(id, name) {
   $("missing-list").innerHTML = list
     .map((t, i) => `
       <div class="missing-row">
-        <div class="warn">✗ ${esc(t.artists)} — ${esc(t.name)}</div>
-        ${t.sp_track_id ? `<button class="btn btn-ghost btn-play" onclick="togglePreview(${i}, '${t.sp_track_id}')">▶ Escuchar</button>` : ""}
-        <div class="preview-wrap" id="preview-${i}"></div>
+        <div class="missing-head" onclick="toggleAlbum(${i}, '${t.sp_track_id}')">
+          <div class="warn">✗ ${esc(t.artists)} — ${esc(t.name)}</div>
+          ${t.sp_track_id ? `<button class="btn btn-ghost btn-play">💿 Ver álbum</button>` : ""}
+        </div>
+        <div class="album-wrap" id="album-${i}"></div>
       </div>`).join("")
     || `<div class="ok">Nada pendiente ✓</div>`;
   openPanel("missing");
 }
 
-function togglePreview(i, trackId) {
-  const wrap = $("preview-" + i);
+async function toggleAlbum(i, trackId) {
+  const wrap = $("album-" + i);
+  if (wrap.innerHTML) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<div class="album-loading">Cargando álbum…</div>`;
+  const album = await (await fetch(`/api/track/${trackId}/album`)).json();
+  if (album.error) { wrap.innerHTML = `<div class="warn">✗ ${esc(album.error)}</div>`; return; }
+  wrap.innerHTML = `
+    <div class="album-head">
+      ${album.image ? `<img src="${album.image}" alt="" class="album-cover">` : ""}
+      <div class="album-name">${esc(album.name)}</div>
+    </div>
+    <div class="album-tracks">
+      ${album.tracks.map((t) => `
+        <div class="album-track">
+          <span class="num">${t.track_number}</span>
+          <span class="title">${esc(t.name)} — ${esc(t.artists)}</span>
+          <button class="btn btn-ghost btn-play" onclick="togglePreview(this, '${t.sp_track_id}')">▶</button>
+        </div>
+        <div class="preview-wrap"></div>`).join("")}
+    </div>`;
+}
+
+function togglePreview(btn, trackId) {
+  const wrap = btn.parentElement.nextElementSibling;
   if (wrap.innerHTML) { wrap.innerHTML = ""; return; }
   wrap.innerHTML = `<iframe src="https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0"
       width="100%" height="80" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;

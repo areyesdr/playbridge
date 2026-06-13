@@ -677,6 +677,27 @@ class SyncEngine:
                          ORDER BY artists""", (uid, sp_playlist_id))
             return [dict(r) for r in c.fetchall()]
 
+    def track_album(self, uid, sp_track_id):
+        """Álbum de un track + su tracklist completo, para el acordeón
+        de reproducción en el panel de canciones faltantes."""
+        sp = self.sp(uid)
+        if not sp:
+            return None
+        track = sp.track(sp_track_id)
+        album = track["album"]
+        items = sp.album_tracks(album["id"])["items"]
+        return {
+            "id": album["id"],
+            "name": album["name"],
+            "image": (album["images"][-1]["url"] if album.get("images") else None),
+            "tracks": [{
+                "sp_track_id": t["id"],
+                "name": t["name"],
+                "track_number": t["track_number"],
+                "artists": ", ".join(a["name"] for a in t["artists"]),
+            } for t in items],
+        }
+
     def reset_playlist(self, uid, sp_playlist_id):
         """Olvida el progreso de una playlist (y su yt_id) para forzar una
         resincronización completa desde cero."""

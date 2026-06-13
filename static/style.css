@@ -189,12 +189,23 @@ input[type=checkbox].real:indeterminate::after{content:'–';position:absolute;i
 .log-line .msg{color:#C7D0DB;word-break:break-word}
 .log-empty{padding:40px;text-align:center;color:var(--faint)}
 
-.missing-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:5px 16px;border-left:2px solid transparent}
+.missing-row{padding:5px 16px;border-left:2px solid transparent}
 .missing-row:hover{background:rgba(255,255,255,.02)}
-.missing-row .warn{flex:1;min-width:0}
+.missing-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;cursor:pointer}
+.missing-head .warn{flex:1;min-width:0}
 .btn-play{padding:4px 10px;font-size:12px;flex-shrink:0}
 .preview-wrap{width:100%}
-.preview-wrap iframe{border-radius:8px;display:block}
+.preview-wrap iframe{border-radius:8px;display:block;margin:4px 0}
+
+.album-wrap{margin-top:8px}
+.album-loading{padding:10px;color:var(--faint)}
+.album-head{display:flex;align-items:center;gap:10px;padding:6px 0}
+.album-cover{width:40px;height:40px;border-radius:6px;flex-shrink:0}
+.album-name{font-weight:600;color:var(--txt)}
+.album-tracks{border-left:2px solid var(--line);margin-left:8px;padding-left:12px}
+.album-track{display:flex;align-items:center;gap:10px;padding:4px 0}
+.album-track .num{color:var(--faint);width:20px;text-align:right;flex-shrink:0}
+.album-track .title{flex:1;min-width:0;color:#C7D0DB}
 
 /* ============ DIALOGS ============ */
 dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:520px;width:92vw;font-family:var(--font-b)}

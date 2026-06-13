@@ -128,6 +128,18 @@ def api_missing(pl_id):
     return jsonify(engine.missing_tracks(uid(), pl_id))
 
 
+@app.route("/api/track/<track_id>/album")
+def api_track_album(track_id):
+    u = uid()
+    if DEMO or not engine.verify_spotify(u):
+        return jsonify({"error": "Conecta Spotify primero (botón Spotify)"}), 400
+    try:
+        album = engine.track_album(u, track_id)
+        return jsonify(album) if album else (jsonify({"error": "No encontrado"}), 404)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/resync/<pl_id>", methods=["POST"])
 def api_resync(pl_id):
     u = uid()
