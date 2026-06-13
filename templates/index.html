@@ -4,138 +4,155 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PlayBridge — Spotify → YT Music</title>
-<meta name="theme-color" content="#0B0E13">
+<meta name="theme-color" content="#0D1117">
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=4">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 
-<header>
+<!-- ===================== NAVBAR ===================== -->
+<nav>
   <div class="brand">
-    <h1>PLAY·BRIDGE</h1>
-    <span class="sub">spotify → youtube music {% if demo %}· <b class="demo-tag">DEMO</b>{% endif %}</span>
+    <span class="bridge-ico">⇄</span> PLAY·BRIDGE
+    {% if demo %}<span class="demo-tag">DEMO</span>{% endif %}
   </div>
-  <div class="chips">
-    <button class="acct-pill state-off" id="pill-sp" onclick="onPillClick('sp')">
-      <i class="dot"></i>
-      <span class="pill-label">Spotify</span>
-      <span class="pill-sub" id="pill-sp-sub"></span>
-    </button>
-    <button class="acct-pill state-off" id="pill-yt" onclick="onPillClick('yt')">
-      <i class="dot"></i>
-      <span class="pill-label">YT Music</span>
-      <span class="pill-sub" id="pill-yt-sub"></span>
-    </button>
+  <div class="nav-tabs" role="tablist">
+    <button class="nav-tab active" data-tab="migrate" role="tab">Migración</button>
+    <button class="nav-tab" data-tab="logs" role="tab">Registro <span class="badge" id="log-badge">0</span></button>
+  </div>
+  <div class="nav-right">
+    <button class="conn-pill sp" id="pill-sp" onclick="onPillClick('sp')"><span class="dot"></span><span class="lbl">Spotify: <b id="pill-sp-sub">sin conectar</b></span></button>
+    <button class="conn-pill yt" id="pill-yt" onclick="onPillClick('yt')"><span class="dot"></span><span class="lbl">YT Music: <b id="pill-yt-sub">sin conectar</b></span></button>
     <button class="chip ghost" onclick="openPanel('cfg')" title="Configuración (admin)">⚙</button>
   </div>
-</header>
+</nav>
 
-<!-- ───────────────────────────── onboarding -->
-<section class="onboard" id="onboard">
-  <div class="onboard-step" id="ob-sp">
-    <span class="ob-num">1</span>
-    <div class="ob-text">
-      <strong>Conecta tu cuenta de Spotify</strong>
-      <span class="muted">Autoriza el acceso de lectura a tus playlists</span>
-    </div>
-    <button class="btn primary" onclick="connectSpotify()">Conectar</button>
-  </div>
-  <div class="onboard-step" id="ob-yt">
-    <span class="ob-num">2</span>
-    <div class="ob-text">
-      <strong>Conecta YouTube Music</strong>
-      <span class="muted">Con tu cuenta de Google — gratis, sin tarjeta</span>
-    </div>
-    <button class="btn primary" onclick="openPanel('yt')">Conectar</button>
-  </div>
-</section>
+<main>
+<!-- ===================== VISTA MIGRACIÓN ===================== -->
+<section class="view active" id="view-migrate">
+  <div class="panes">
 
-<!-- ───────────────────────────── beam de transferencia (firma) -->
-<section class="beam-wrap" id="beam">
-  <div class="node sp">
-    <span class="node-label">ORIGEN</span>
-    <span class="node-name">Spotify</span>
-    <span class="node-stat" id="stat-found">0 ✓</span>
-  </div>
-
-  <div class="beam-track">
-    <div class="beam-bar"><div class="beam-fill" id="beam-fill"></div></div>
-    <div class="ticker" id="ticker">— inactivo —</div>
-    <div class="beam-meta">
-      <span id="beam-playlist"></span>
-      <span id="beam-count"></span>
-    </div>
-  </div>
-
-  <div class="node yt">
-    <span class="node-label">DESTINO</span>
-    <span class="node-name">YT Music</span>
-    <span class="node-stat warn" id="stat-missing">0 ✗</span>
-  </div>
-</section>
-
-<!-- ───────────────────────────── playlists + consola -->
-<div class="main-grid">
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Playlists</h2>
-      <div class="actions">
-        <input type="text" id="pl-filter" class="pl-filter" placeholder="🔎 Filtrar por nombre…" oninput="renderPlaylists()">
-        <button class="btn ghost" onclick="loadPlaylists(true)">↻ Refrescar de Spotify</button>
-        <button class="btn primary" id="btn-sync" onclick="syncSelected()">Sincronizar seleccionadas</button>
+    <!-- PANEL SPOTIFY (origen) -->
+    <div class="pane sp">
+      <div class="pane-head">
+        <div class="svc-logo sp">S</div>
+        <div>
+          <h2>Spotify <span class="tag">· origen</span></h2>
+          <div class="sub" id="sp-sub">Conecta tu cuenta para listar tus playlists</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-ghost btn-sm" id="sp-refresh" style="display:none" onclick="loadPlaylists(true)" title="Volver a cargar playlists desde Spotify">↻ Recargar</button>
+        <button class="btn btn-sp btn-sm" id="sp-login-btn" onclick="onPillClick('sp')"><span class="btn-label">Conectar</span></button>
+      </div>
+      <div class="pane-body" id="sp-body">
+        <div class="pl-toolbar" id="pl-toolbar" style="display:none">
+          <input type="text" id="pl-filter" class="pl-filter" placeholder="🔎 Filtrar por nombre…" oninput="renderPlaylists()">
+          <label><input type="checkbox" class="real" id="pl-select-all" onchange="toggleAll()"> Todo</label>
+          <span class="count" id="pl-count"></span>
+        </div>
+        <div class="pl-list" id="pl-list">
+          <div class="empty" id="sp-empty">
+            <div class="big">♫</div>
+            <p>Sin conexión a Spotify. Pulsa <b>Conectar</b> y autoriza el acceso para cargar tus playlists.</p>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="pl-table-head" id="pl-table-head" style="display:none">
-      <label class="select-all">
-        <input type="checkbox" id="pl-select-all" onchange="toggleAll()"> Seleccionar todo
-      </label>
-      <span class="muted" id="pl-count"></span>
-    </div>
-    <div class="table" id="pl-table">
-      <div class="empty" id="pl-empty">Conecta Spotify y pulsa «Refrescar» para cargar tus playlists.</div>
-    </div>
-  </section>
 
-  <details class="panel console-panel" id="console-panel" open>
-    <summary>📋 Consola <span class="log-meta muted" id="log-meta"></span></summary>
-    <div class="log-filters" id="log-filters">
-      <button class="lf active" data-lvl="all" onclick="setLogFilter('all')">Todos</button>
-      <button class="lf" data-lvl="ok" onclick="setLogFilter('ok')">✓ OK</button>
-      <button class="lf" data-lvl="warn" onclick="setLogFilter('warn')">⚠ Avisos</button>
-      <button class="lf" data-lvl="error" onclick="setLogFilter('error')">✗ Errores</button>
-      <button class="btn ghost" onclick="copyLog()">⧉</button>
-      <button class="btn ghost" onclick="clearLog()">🗑</button>
+    <!-- PUENTE -->
+    <div class="bridge" id="bridge">
+      <div class="lane"></div>
+      <div class="arrow">➜</div>
+      <div class="lane"></div>
     </div>
-    <div class="log-full" id="log"></div>
-  </details>
-</div>
 
-<!-- ───────────────────────────── sync automática -->
-<section class="panel">
-  <div class="panel-head"><h2>Sync automática</h2></div>
-  <div class="sched">
+    <!-- PANEL YT MUSIC (destino) -->
+    <div class="pane yt">
+      <div class="pane-head">
+        <div class="svc-logo yt">▶</div>
+        <div>
+          <h2>YouTube Music <span class="tag">· destino</span></h2>
+          <div class="sub" id="yt-sub">Conecta tu cuenta para recibir las playlists</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-yt btn-sm" id="yt-login-btn" onclick="onPillClick('yt')"><span class="btn-label">Conectar</span></button>
+      </div>
+      <div class="pane-body" id="yt-body">
+        <div class="empty">
+          <div class="big">▶</div>
+          <p>Sin conexión a YouTube Music. El progreso de cada playlist migrada aparecerá aquí.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BARRA DE ACCIÓN -->
+  <div class="action-bar">
+    <div class="prog-wrap" id="prog-wrap">
+      <div class="prog-labels">
+        <span class="now" id="prog-now">—</span>
+        <span class="stats"><span class="f-ok" id="prog-found">0 ✓</span><span class="f-miss" id="prog-missing">0 ✗</span></span>
+        <span class="pct" id="prog-pct">0%</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+    </div>
+    <div class="action-row">
+      <span class="sel-summary" id="sel-summary"><strong>0</strong> playlists seleccionadas</span>
+      <div class="grow"></div>
+      <span id="migrate-wrap" tabindex="0">
+        <button class="btn btn-migrate" id="btn-sync" disabled onclick="syncSelected()">
+          <span class="spinner"></span><span class="btn-label">Migrar seleccionadas ⇄</span>
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- SYNC AUTOMÁTICA -->
+  <div class="action-bar sched-bar">
+    <span class="sched-title">Sync automática</span>
     <label class="switch">
       <input type="checkbox" id="sched-on" onchange="saveScheduler()">
       <span class="slider"></span>
     </label>
-    <span>cada</span>
+    <span class="muted">cada</span>
     <input type="number" id="sched-hours" value="24" min="1" max="168" onchange="saveScheduler()">
-    <span>horas</span>
+    <span class="muted">horas</span>
     <span class="muted" id="sched-last"></span>
   </div>
 </section>
 
+<!-- ===================== VISTA LOGS ===================== -->
+<section class="view" id="view-logs">
+  <div class="logs-wrap">
+    <div class="logs-toolbar">
+      <span class="title">Registro de actividad</span>
+      <button class="chip active" data-lvl="all" onclick="setLogFilter('all')">Todo</button>
+      <button class="chip f-ok" data-lvl="ok" onclick="setLogFilter('ok')">Éxitos</button>
+      <button class="chip f-warn" data-lvl="warn" onclick="setLogFilter('warn')">Avisos</button>
+      <button class="chip f-error" data-lvl="error" onclick="setLogFilter('error')">Errores</button>
+      <div class="right">
+        <button class="btn btn-ghost btn-sm" onclick="copyLog()">⧉ Copiar</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearLog()">🗑 Limpiar</button>
+      </div>
+    </div>
+    <div class="log-box" id="log">
+      <div class="log-empty">Aún no hay actividad registrada. Cada conexión, carga y migración quedará anotada aquí.</div>
+    </div>
+  </div>
+</section>
+</main>
+
 <!-- ───────────────────────────── panel conectar YT Music -->
 <dialog id="panel-yt">
   <h3>Conectar YouTube Music</h3>
-  <p class="muted">Inicia sesión con tu cuenta de Google: es gratis, no caduca y se
+  <p class="desc">Inicia sesión con tu cuenta de Google: es gratis, no caduca y se
     refresca sola. No requiere tarjeta ni planes de pago.</p>
 
-  <button class="btn primary btn-google" id="btn-yt-oauth" onclick="startYtOauth()">
+  <button class="btn btn-yt btn-google" id="btn-yt-oauth" onclick="startYtOauth()">
     <span class="g-icon">G</span> Iniciar sesión con Google
   </button>
 
@@ -147,9 +164,9 @@
   </div>
 
   <details class="yt-advanced">
-    <summary class="muted">Método avanzado (sin Google) — headers del navegador</summary>
+    <summary>Método avanzado (sin Google) — headers del navegador</summary>
     <div class="yt-option">
-      <p class="muted">Caducan en minutos: úsalo solo si el login con Google no es una opción.</p>
+      <p class="desc" style="margin-bottom:0">Caducan en minutos: úsalo solo si el login con Google no es una opción.</p>
       <ol class="steps">
         <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
         <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
@@ -157,38 +174,38 @@
         <li>Pégalos aquí:</li>
       </ol>
       <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
-      <button class="btn ghost" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
+      <button class="btn btn-ghost" onclick="saveYtHeaders()" style="margin-top:8px">Guardar y conectar</button>
     </div>
   </details>
 
   <div class="dialog-actions">
-    <button class="btn ghost" onclick="closePanel('yt')">Cerrar</button>
+    <button class="btn btn-ghost" onclick="closePanel('yt')">Cerrar</button>
   </div>
 </dialog>
 
 <!-- ───────────────────────────── panel cuenta Spotify -->
 <dialog id="panel-sp">
   <h3>Cuenta de Spotify</h3>
-  <p class="muted" id="sp-account-info">—</p>
+  <p class="desc" id="sp-account-info">—</p>
   <div class="dialog-actions">
-    <button class="btn ghost" onclick="closePanel('sp')">Cerrar</button>
-    <button class="btn primary" onclick="connectSpotify()">Reconectar</button>
+    <button class="btn btn-ghost" onclick="closePanel('sp')">Cerrar</button>
+    <button class="btn btn-sp" onclick="connectSpotify()">Reconectar</button>
   </div>
 </dialog>
 
 <!-- ───────────────────────────── panel config Spotify -->
 <dialog id="panel-cfg">
   <h3>Credenciales (administrador)</h3>
-  <p class="muted">Spotify: crea una app en <b>developer.spotify.com/dashboard</b> con la Redirect URI exacta.</p>
-  <label>Spotify Client ID <input type="text" id="cfg-id"></label>
-  <label>Spotify Client Secret <input type="password" id="cfg-secret" placeholder="(sin cambios)"></label>
-  <label>Redirect URI <input type="text" id="cfg-redirect"></label>
-  <p class="muted" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada. Gratis, sin facturación.</p>
-  <label>Google Client ID <input type="text" id="cfg-yt-id"></label>
-  <label>Google Client Secret <input type="password" id="cfg-yt-secret" placeholder="(sin cambios)"></label>
+  <p class="desc">Spotify: crea una app en <b>developer.spotify.com/dashboard</b> con la Redirect URI exacta.</p>
+  <label for="cfg-id">Spotify Client ID</label><input type="text" id="cfg-id">
+  <label for="cfg-secret">Spotify Client Secret</label><input type="password" id="cfg-secret" placeholder="(sin cambios)">
+  <label for="cfg-redirect">Redirect URI</label><input type="text" id="cfg-redirect">
+  <p class="desc" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada. Gratis, sin facturación.</p>
+  <label for="cfg-yt-id">Google Client ID</label><input type="text" id="cfg-yt-id">
+  <label for="cfg-yt-secret">Google Client Secret</label><input type="password" id="cfg-yt-secret" placeholder="(sin cambios)">
   <div class="dialog-actions">
-    <button class="btn ghost" onclick="closePanel('cfg')">Cancelar</button>
-    <button class="btn primary" onclick="saveConfig()">Guardar</button>
+    <button class="btn btn-ghost" onclick="closePanel('cfg')">Cancelar</button>
+    <button class="btn btn-sp" onclick="saveConfig()">Guardar</button>
   </div>
 </dialog>
 
@@ -197,10 +214,13 @@
   <h3 id="missing-title">No encontradas</h3>
   <div class="log" id="missing-list" style="max-height:50vh"></div>
   <div class="dialog-actions">
-    <button class="btn ghost" onclick="closePanel('missing')">Cerrar</button>
+    <button class="btn btn-ghost" onclick="closePanel('missing')">Cerrar</button>
   </div>
 </dialog>
 
-<script src="/static/app.js?v=4"></script>
+<!-- ===================== TOASTS ===================== -->
+<div class="toast-zone" id="toasts" aria-live="polite"></div>
+
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>
