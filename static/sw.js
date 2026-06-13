@@ -1,7 +1,7 @@
 /* PlayBridge — service worker para instalación PWA.
    Estáticos: network-first (siempre la versión nueva tras un deploy),
    con caché como respaldo offline. La API va directo a la red. */
-const CACHE = "playbridge-v8";
+const CACHE = "playbridge-v9";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();

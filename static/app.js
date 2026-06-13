@@ -274,7 +274,9 @@ function renderPlaylists() {
             <div class="pl-meta">${p.total} pistas${p.last_sync ? ` · ⏱ ${p.last_sync.replace("T", " ")}` : ""}</div>
           </div>
           <span class="mini-state"><span class="spinner"></span> migrando…</span>
-        </div>`;
+          <button class="btn-expand" title="Ver canciones" onclick="event.stopPropagation(); togglePlTracks(this, '${p.sp_id}')">▾</button>
+        </div>
+        <div class="pl-tracks" id="pltracks-${p.sp_id}"></div>`;
       }).join("")
     : `<div class="empty"><p>Sin resultados para «${esc(filter)}».</p></div>`;
 
@@ -451,6 +453,29 @@ function togglePreview(btn, trackId) {
   if (wrap.innerHTML) { wrap.innerHTML = ""; return; }
   wrap.innerHTML = `<iframe src="https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0"
       width="100%" height="80" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+}
+
+/* ───────────────────────── acordeón de canciones por playlist */
+async function togglePlTracks(btn, plId, refresh) {
+  const wrap = $("pltracks-" + plId);
+  if (wrap.innerHTML && !refresh) { wrap.innerHTML = ""; btn.textContent = "▾"; return; }
+  btn.textContent = "▴";
+  wrap.innerHTML = `<div class="album-loading">Cargando canciones…</div>`;
+  const tracks = await (await fetch(`/api/playlist/${plId}/tracks` + (refresh ? "?refresh=1" : ""))).json();
+  if (tracks.error) { wrap.innerHTML = `<div class="warn">✗ ${esc(tracks.error)}</div>`; return; }
+  wrap.innerHTML = `
+    <div class="album-head">
+      <div class="album-name">${tracks.length} canción${tracks.length === 1 ? "" : "es"}</div>
+      <button class="btn btn-ghost btn-play" onclick="togglePlTracks(this.closest('.pl-tracks').previousElementSibling.querySelector('.btn-expand'), '${plId}', true)">↻</button>
+    </div>
+    <div class="album-tracks">
+      ${tracks.length ? tracks.map((t) => `
+        <div class="album-track">
+          <span class="title">${esc(t.artists)} — ${esc(t.name)}</span>
+          ${t.sp_track_id ? `<button class="btn btn-ghost btn-play" onclick="togglePreview(this, '${t.sp_track_id}')">▶</button>` : ""}
+        </div>
+        <div class="preview-wrap"></div>`).join("") : `<div class="ok">Playlist vacía</div>`}
+    </div>`;
 }
 
 /* ───────────────────────── conexiones / config */

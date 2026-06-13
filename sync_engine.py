@@ -153,6 +153,16 @@ def init_db():
             status TEXT DEFAULT 'pending',
             PRIMARY KEY (uid, sp_track_id, sp_playlist_id)
         )""")
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS playlist_tracks_cache(
+            uid TEXT,
+            sp_playlist_id TEXT,
+            sp_track_id TEXT,
+            name TEXT,
+            artists TEXT,
+            position INTEGER,
+            PRIMARY KEY (uid, sp_playlist_id, sp_track_id)
+        )""")
 
 
 def setting_get(key, default=None):
@@ -659,6 +669,8 @@ class SyncEngine:
             for r in removed:
                 c.execute("DELETE FROM tracks WHERE uid=%s AND sp_playlist_id=%s",
                           (uid, r["sp_id"]))
+                c.execute("DELETE FROM playlist_tracks_cache WHERE uid=%s AND sp_playlist_id=%s",
+                          (uid, r["sp_id"]))
                 c.execute("DELETE FROM playlists WHERE uid=%s AND sp_id=%s",
                           (uid, r["sp_id"]))
         for r in removed:
@@ -676,6 +688,51 @@ class SyncEngine:
                          WHERE uid=%s AND sp_playlist_id=%s AND status='missing'
                          ORDER BY artists""", (uid, sp_playlist_id))
             return [dict(r) for r in c.fetchall()]
+
+    def playlist_tracklist(self, uid, sp_playlist_id, refresh=False):
+        """Tracklist de una playlist para el acordeón del listado.
+        Se cachea en DB tras la primera consulta a Spotify (playlist_tracks_cache)
+        para no repetir llamadas a la API en cada apertura."""
+        if DEMO:
+            return self._demo_tracks(sp_playlist_id)
+        if not refresh:
+            with db() as c:
+                c.execute("""SELECT sp_track_id, name, artists FROM playlist_tracks_cache
+                             WHERE uid=%s AND sp_playlist_id=%s
+                             ORDER BY position""", (uid, sp_playlist_id))
+                rows = [dict(r) for r in c.fetchall()]
+                if rows:
+                    return rows
+        sp = self.sp(uid)
+        if sp is None:
+            raise RuntimeError("Conecta Spotify primero (botón Spotify)")
+        results = sp.playlist_tracks(sp_playlist_id, limit=100)
+        items = results["items"]
+        while results["next"]:
+            results = sp.next(results)
+            items.extend(results["items"])
+        out = []
+        for it in items:
+            t = it.get("track") or it.get("item")
+            if not t or t.get("is_local") or it.get("is_local") or not t.get("id"):
+                continue
+            artists = t.get("artists")
+            if not artists:
+                continue
+            out.append({
+                "sp_track_id": t["id"],
+                "name": t["name"],
+                "artists": ", ".join(a["name"] for a in artists),
+            })
+        with db() as c:
+            c.execute("""DELETE FROM playlist_tracks_cache
+                         WHERE uid=%s AND sp_playlist_id=%s""", (uid, sp_playlist_id))
+            for pos, t in enumerate(out):
+                c.execute("""INSERT INTO playlist_tracks_cache
+                             (uid, sp_playlist_id, sp_track_id, name, artists, position)
+                             VALUES(%s,%s,%s,%s,%s,%s)""",
+                          (uid, sp_playlist_id, t["sp_track_id"], t["name"], t["artists"], pos))
+        return out
 
     def track_album(self, uid, sp_track_id):
         """Álbum de un track + su tracklist completo, para el acordeón

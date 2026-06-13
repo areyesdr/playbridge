@@ -113,6 +113,10 @@ main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .pl-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--sp),#4ade80)}
 .pl-row .mini-state{margin-left:auto;font-size:11px;font-family:var(--font-m);color:var(--info);display:none;align-items:center;gap:6px;flex-shrink:0}
 .pl-row.migrating .mini-state{display:flex}
+.btn-expand{margin-left:8px;flex-shrink:0;width:26px;height:26px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;transition:all .12s}
+.btn-expand:hover{border-color:var(--faint);color:var(--txt);background:var(--panel-2)}
+.pl-tracks{padding:0 16px;border-bottom:1px solid var(--line)}
+.pl-tracks:empty{border-bottom:none;padding:0}
 .cbx{width:19px;height:19px;border-radius:6px;border:1.5px solid var(--faint);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;font-size:11px;color:transparent}
 .pl-row.selected .cbx{background:var(--sp);border-color:var(--sp);color:#06250F}
 .pl-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto}
@@ -201,7 +205,7 @@ input[type=checkbox].real:indeterminate::after{content:'–';position:absolute;i
 .album-loading{padding:10px;color:var(--faint)}
 .album-head{display:flex;align-items:center;gap:10px;padding:6px 0}
 .album-cover{width:40px;height:40px;border-radius:6px;flex-shrink:0}
-.album-name{font-weight:600;color:var(--txt)}
+.album-name{font-weight:600;color:var(--txt);flex:1}
 .album-tracks{border-left:2px solid var(--line);margin-left:8px;padding-left:12px}
 .album-track{display:flex;align-items:center;gap:10px;padding:4px 0}
 .album-track .num{color:var(--faint);width:20px;text-align:right;flex-shrink:0}

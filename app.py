@@ -128,6 +128,16 @@ def api_missing(pl_id):
     return jsonify(engine.missing_tracks(uid(), pl_id))
 
 
+@app.route("/api/playlist/<pl_id>/tracks")
+def api_playlist_tracks(pl_id):
+    u = uid()
+    refresh = request.args.get("refresh") == "1"
+    try:
+        return jsonify(engine.playlist_tracklist(u, pl_id, refresh=refresh))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/api/track/<track_id>/album")
 def api_track_album(track_id):
     u = uid()
