@@ -412,9 +412,21 @@ async function showMissing(id, name) {
   const list = await (await fetch("/api/missing/" + id)).json();
   $("missing-title").textContent = `No encontradas — ${name}`;
   $("missing-list").innerHTML = list
-    .map((t) => `<div class="warn">✗ ${esc(t.artists)} — ${esc(t.name)}</div>`).join("")
+    .map((t, i) => `
+      <div class="missing-row">
+        <div class="warn">✗ ${esc(t.artists)} — ${esc(t.name)}</div>
+        ${t.sp_track_id ? `<button class="btn btn-ghost btn-play" onclick="togglePreview(${i}, '${t.sp_track_id}')">▶ Escuchar</button>` : ""}
+        <div class="preview-wrap" id="preview-${i}"></div>
+      </div>`).join("")
     || `<div class="ok">Nada pendiente ✓</div>`;
   openPanel("missing");
+}
+
+function togglePreview(i, trackId) {
+  const wrap = $("preview-" + i);
+  if (wrap.innerHTML) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<iframe src="https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0"
+      width="100%" height="80" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
 }
 
 /* ───────────────────────── conexiones / config */

@@ -672,7 +672,7 @@ class SyncEngine:
 
     def missing_tracks(self, uid, sp_playlist_id):
         with db() as c:
-            c.execute("""SELECT name, artists FROM tracks
+            c.execute("""SELECT name, artists, sp_track_id FROM tracks
                          WHERE uid=%s AND sp_playlist_id=%s AND status='missing'
                          ORDER BY artists""", (uid, sp_playlist_id))
             return [dict(r) for r in c.fetchall()]
