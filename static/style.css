@@ -227,6 +227,7 @@ dialog input:focus,dialog textarea:focus{outline:none;border-color:var(--info)}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
 .steps{margin:0 0 12px 18px;font-size:12.5px;display:flex;flex-direction:column;gap:5px;color:var(--txt)}
 .steps code{color:var(--sp)}
+.bookmarklet{display:inline-block;background:var(--yt);color:#0D1117;font-weight:700;font-size:12px;padding:5px 10px;border-radius:6px;text-decoration:none;cursor:grab}
 
 /* ── OAuth Google YT Music ─────────────── */
 .btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;font-size:13px;margin:14px 0}

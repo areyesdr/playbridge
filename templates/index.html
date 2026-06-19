@@ -162,18 +162,26 @@
     <p class="muted" id="yt-oauth-status">esperando autorización…</p>
   </div>
 
-  <details class="yt-advanced">
-    <summary>Método avanzado (sin Google) — headers del navegador</summary>
+  <details class="yt-advanced" id="yt-advanced-headers" open>
+    <summary>Método alternativo — usa esto si "Iniciar sesión con Google" falla</summary>
     <div class="yt-option">
-      <p class="desc" style="margin-bottom:0">Caducan en minutos: úsalo solo si el login con Google no es una opción.</p>
+      <p class="desc" style="margin-bottom:0">Más confiable que el login con Google ahora mismo. Un clic, sin DevTools:</p>
       <ol class="steps">
-        <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
-        <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
-        <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
-        <li>Pégalos aquí:</li>
+        <li>Arrastra este botón a tu barra de marcadores (una sola vez): <a class="bookmarklet" id="yt-bookmarklet" href="#" onclick="return false">📋 Copiar sesión YT Music</a></li>
+        <li>Abre <b>music.youtube.com</b>, inicia sesión si no lo has hecho</li>
+        <li>Haz clic en ese marcador (en la barra, no aquí) — copia los datos solo</li>
+        <li>Vuelve a esta pestaña y pega aquí (<kbd>Ctrl+V</kbd>):</li>
       </ol>
-      <textarea id="yt-headers" rows="6" placeholder="accept: */*&#10;authorization: SAPISIDHASH ...&#10;cookie: ..."></textarea>
+      <textarea id="yt-headers" rows="6" placeholder="cookie: ...&#10;x-goog-authuser: 0"></textarea>
       <button class="btn btn-ghost" onclick="saveYtHeaders(this)" style="margin-top:8px"><span class="spinner"></span><span class="btn-label">Guardar y conectar</span></button>
+      <details style="margin-top:10px"><summary class="muted">¿No puedes usar marcadores? Hazlo manual con DevTools</summary>
+        <ol class="steps">
+          <li>Abre <b>music.youtube.com</b> con tu cuenta</li>
+          <li><kbd>F12</kbd> → pestaña <b>Red</b> → filtra <code>/browse</code></li>
+          <li>Click derecho en la petición → <b>Copiar headers de solicitud</b></li>
+          <li>Pégalos en el cuadro de arriba</li>
+        </ol>
+      </details>
     </div>
   </details>
 

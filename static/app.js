@@ -582,5 +582,15 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (m) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
+/* ───────────────────────── bookmarklet: copia sesión de YT Music con un clic
+   (corre en music.youtube.com; document.cookie SÍ incluye SAPISID ahí porque
+   Google lo necesita legible por JS para sus propias llamadas firmadas) */
+(function setupYtBookmarklet() {
+  const link = $("yt-bookmarklet");
+  if (!link) return;
+  const code = `(function(){var h="cookie: "+document.cookie+"\\nx-goog-authuser: 0\\nuser-agent: "+navigator.userAgent;function done(){alert("Copiado. Vuelve a la pestaña de PlayBridge y pégalo (Ctrl+V) en el cuadro de YouTube Music.");}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(h).then(done,function(){prompt("Copia este texto:",h);});}else{prompt("Copia este texto:",h);}})();`;
+  link.href = "javascript:" + code;
+})();
+
 loadPlaylists(false);
 startStream();

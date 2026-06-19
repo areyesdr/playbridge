@@ -676,11 +676,17 @@ class SyncEngine:
         vigentes y elimina (con su progreso) las que ya no existen en Spotify."""
         pls = self.fetch_playlists(uid)
         current_ids = {p["sp_id"] for p in pls}
+        for p in pls:
+            if p["total"] == 0:
+                self.log(uid, f"  ⚠ Spotify no informó el total de pistas de «{p['name']}» "
+                              f"en el listado (se mantiene el conteo anterior si existe).", "warn")
         with db() as c:
             for p in pls:
+                # si Spotify no informa total (0), no pisar un conteo previo real conocido
                 c.execute("""INSERT INTO playlists(uid,sp_id,name,total) VALUES(%s,%s,%s,%s)
                              ON CONFLICT(uid,sp_id) DO UPDATE SET name=EXCLUDED.name,
-                             total=EXCLUDED.total""",
+                             total=CASE WHEN EXCLUDED.total>0 THEN EXCLUDED.total
+                                        ELSE playlists.total END""",
                           (uid, p["sp_id"], p["name"], p["total"]))
             c.execute("SELECT sp_id, name FROM playlists WHERE uid=%s", (uid,))
             removed = [r for r in c.fetchall() if r["sp_id"] not in current_ids]
@@ -750,6 +756,11 @@ class SyncEngine:
                              (uid, sp_playlist_id, sp_track_id, name, artists, position)
                              VALUES(%s,%s,%s,%s,%s,%s)""",
                           (uid, sp_playlist_id, t["sp_track_id"], t["name"], t["artists"], pos))
+            # conteo real de Spotify; corrige el total mostrado en el listado
+            # si el metadato de /me/playlists vino incompleto o desactualizado
+            if out:
+                c.execute("""UPDATE playlists SET total=%s WHERE uid=%s AND sp_id=%s""",
+                          (len(out), uid, sp_playlist_id))
         return out
 
     def track_album(self, uid, sp_track_id):
