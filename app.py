@@ -114,6 +114,12 @@ def service_worker():
                                mimetype="application/javascript")
 
 
+@app.route("/google7dfc3a72d64a122c.html")
+def google_site_verification():
+    return send_from_directory(app.static_folder, "google7dfc3a72d64a122c.html",
+                               mimetype="text/html")
+
+
 @app.route("/privacy")
 def privacy():
     return render_template("legal.html", title="Política de Privacidad",
