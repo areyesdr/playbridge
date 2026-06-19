@@ -364,10 +364,10 @@ class SyncEngine:
     # ------------------------------------------------ auth Spotify
     def oauth(self, uid):
         return SpotifyOAuth(
-            client_id=setting_get("sp_client_id") or os.getenv("SPOTIFY_CLIENT_ID", ""),
-            client_secret=setting_get("sp_client_secret") or os.getenv("SPOTIFY_CLIENT_SECRET", ""),
-            redirect_uri=setting_get("sp_redirect") or os.getenv("SPOTIFY_REDIRECT_URI",
-                                     "http://localhost:5000/callback"),
+            client_id=os.getenv("SPOTIFY_CLIENT_ID", "") or setting_get("sp_client_id"),
+            client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", "") or setting_get("sp_client_secret"),
+            redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI") or setting_get("sp_redirect",
+                                   "http://localhost:5000/callback"),
             scope=SCOPE, cache_handler=DBCacheHandler(uid), open_browser=False,
         )
 
@@ -452,8 +452,8 @@ class SyncEngine:
         """Credenciales del cliente OAuth de Google (tipo 'TV y dispositivos
         de entrada limitada' con YouTube Data API v3 habilitada)."""
         from ytmusicapi.auth.oauth import OAuthCredentials
-        cid = setting_get("yt_client_id") or os.getenv("YT_CLIENT_ID", "")
-        sec = setting_get("yt_client_secret") or os.getenv("YT_CLIENT_SECRET", "")
+        cid = os.getenv("YT_CLIENT_ID", "") or setting_get("yt_client_id")
+        sec = os.getenv("YT_CLIENT_SECRET", "") or setting_get("yt_client_secret")
         if not (cid and sec):
             return None
         return OAuthCredentials(client_id=cid, client_secret=sec)
