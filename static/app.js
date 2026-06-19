@@ -154,11 +154,8 @@ function onPillClick(kind) {
   }
 }
 
-/* ───────────────────────── estado (polling cada 1.5s, 30s si la pestaña está oculta) */
-async function poll() {
-  try {
-    const s = await (await fetch("/api/status?t=" + Date.now())).json();
-
+/* ───────────────────────── estado (server-sent events, sin polling) */
+function applyStatus(s) {
     setPill("sp", s.spotify_state, s.spotify_user);
     setPill("yt", s.yt_state, s.yt_user || (s.yt_method === "oauth" ? "Google" : s.yt_method === "headers" ? "Navegador" : null));
     lastSpState = s.spotify_state;
@@ -210,18 +207,26 @@ async function poll() {
       $("sched-hours").value = s.scheduler.hours;
     $("sched-last").textContent = s.scheduler.last_run
       ? "última: " + s.scheduler.last_run.replace("T", " ") : "";
-  } catch (e) { /* servidor reiniciando */ }
-  pollTimer = setTimeout(poll, document.hidden ? 30000 : 1500);
 }
 
-let pollTimer = null;
-// pestaña en segundo plano: bajar frecuencia para no acumular llamadas
-// a las APIs de Spotify/YT Music mientras nadie la está viendo
+let statusStream = null;
+function startStream() {
+  if (statusStream) return;
+  statusStream = new EventSource("/api/stream");
+  statusStream.onmessage = (e) => applyStatus(JSON.parse(e.data));
+  // si la conexión muere (red, server restart), EventSource reconecta solo;
+  // un fetch puntual cubre el hueco mientras tanto
+  statusStream.onerror = () => fetch("/api/status").then((r) => r.json()).then(applyStatus).catch(() => {});
+}
+function stopStream() {
+  if (statusStream) { statusStream.close(); statusStream = null; }
+}
+
+// pestaña en segundo plano: cerrar el stream para no dejar la conexión
+// abierta sin que nadie la esté viendo
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    clearTimeout(pollTimer);
-    poll();
-  }
+  if (document.hidden) stopStream();
+  else startStream();
 });
 
 /* ───────────────────────── playlists */
@@ -236,7 +241,7 @@ function coverColor(name) {
 
 async function loadPlaylists(refresh) {
   const btn = $("sp-refresh");
-  if (refresh && btn) btn.classList.add("loading");
+  if (refresh && btn) { btn.classList.add("loading"); btn.disabled = true; }
   if (!refresh && !allPlaylists.length) {
     $("pl-list").innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando playlists…</div>`;
   }
@@ -248,7 +253,7 @@ async function loadPlaylists(refresh) {
     allPlaylists = data;
     renderPlaylists();
   } finally {
-    if (refresh && btn) btn.classList.remove("loading");
+    if (refresh && btn) { btn.classList.remove("loading"); btn.disabled = false; }
   }
 }
 
@@ -475,9 +480,16 @@ function togglePreview(btn, trackId) {
 async function togglePlTracks(btn, plId, refresh) {
   const wrap = $("pltracks-" + plId);
   if (wrap.innerHTML && !refresh) { wrap.innerHTML = ""; btn.textContent = "▾"; return; }
+  if (btn.disabled) return;
+  btn.disabled = true;
   btn.textContent = "▴";
   wrap.innerHTML = `<div class="album-loading"><span class="spinner"></span> Cargando canciones…</div>`;
-  const tracks = await (await fetch(`/api/playlist/${plId}/tracks` + (refresh ? "?refresh=1" : ""))).json();
+  let tracks;
+  try {
+    tracks = await (await fetch(`/api/playlist/${plId}/tracks` + (refresh ? "?refresh=1" : ""))).json();
+  } finally {
+    btn.disabled = false;
+  }
   if (tracks.error) { wrap.innerHTML = `<div class="warn">✗ ${esc(tracks.error)}</div>`; return; }
   wrap.innerHTML = `
     <div class="album-head">
@@ -604,4 +616,4 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
 loadPlaylists(false);
-poll();
+startStream();

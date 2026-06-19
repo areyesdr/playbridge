@@ -207,6 +207,11 @@ class YTAuthError(Exception):
     """La sesión de YT Music no es válida (token/headers expirados)."""
 
 
+class YTRateLimitError(Exception):
+    """YT Music está devolviendo 429: abortar el sync ya, no seguir
+    insistiendo track por track (eso es lo que termina en baneo temporal)."""
+
+
 # ---------------------------------------------------------------- Engine
 class SyncEngine:
     def __init__(self):
@@ -252,6 +257,17 @@ class SyncEngine:
         with self.lock:
             s["log"] = []
             setting_set(f"log:{uid}", "[]")
+
+    def cooldown_ok(self, uid, key, seconds):
+        """True como máximo una vez cada `seconds` por (uid, key). Para
+        botones de refresco manual (forzar llamada real a la API) —
+        evita que un clic repetido golpee Spotify/YT Music sin parar."""
+        now = time.time()
+        last = setting_get(f"cooldown:{key}:{uid}")
+        if last and now - float(last) < seconds:
+            return False
+        setting_set(f"cooldown:{key}:{uid}", str(now))
+        return True
 
     def snapshot(self, uid):
         """Estado para el dashboard: lee el último resultado conocido en DB,
@@ -336,6 +352,9 @@ class SyncEngine:
         if not self._yt_auth_method(uid):
             return False
         now = time.time()
+        retry_until = setting_get(f"yt_retry_after:{uid}")
+        if retry_until and now < float(retry_until):
+            return False
         last_check = setting_get(f"yt_check:{uid}")
         if last_check and now - float(last_check) <= 120:
             return setting_get(f"yt_ok:{uid}") == "1"
@@ -783,6 +802,10 @@ class SyncEngine:
             for pid in playlist_ids:
                 self._sync_one(uid, pid)
             self.log(uid, "Sincronización completada", "ok")
+        except YTRateLimitError as e:
+            setting_set(f"yt_retry_after:{uid}", str(time.time() + 600))
+            self.log(uid, f"⚠ YT Music está limitando las solicitudes ({e}). "
+                          f"Sync detenida; espera ~10 min antes de reintentar.", "error")
         except YTAuthError as e:
             self.log(uid, f"⚠ {e}. Reconecta YouTube Music y vuelve a sincronizar.", "error")
             setting_set(f"yt_check:{uid}", "0")  # forzar re-validación inmediata del estado
@@ -926,6 +949,11 @@ class SyncEngine:
                      "invalid argument", "Invalid argument"))
 
     @staticmethod
+    def _is_rate_limit_error(e):
+        msg = str(e).lower()
+        return "429" in msg or "too many requests" in msg or "rate limit" in msg
+
+    @staticmethod
     def _is_definite_auth_error(e):
         """Errores que indican sin ambigüedad credenciales inválidas/expiradas
         (a diferencia del 400 "invalid argument" intermitente de Google)."""
@@ -977,6 +1005,8 @@ class SyncEngine:
         except Exception as e:
             if self._is_auth_error(e):
                 raise YTAuthError(f"sesión de YT Music expirada: {e}")
+            if self._is_rate_limit_error(e):
+                raise YTRateLimitError(str(e))
             self.log(uid, f"  búsqueda falló: {e}", "error")
         return None
 
@@ -992,6 +1022,8 @@ class SyncEngine:
         except Exception as e:
             if self._is_auth_error(e):
                 raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
+            if self._is_rate_limit_error(e):
+                raise YTRateLimitError(str(e))
             self.log(uid, f"  ⚠ Lote de {len(video_ids)} falló ({e}), reintentando individual…", "warn")
             return self._add_individual_retry(uid, yt_id, video_ids)
 
@@ -1052,6 +1084,8 @@ class SyncEngine:
             except Exception as e:
                 if self._is_auth_error(e):
                     raise YTAuthError(f"sesión de YT Music expirada al añadir canciones: {e}")
+                if self._is_rate_limit_error(e):
+                    raise YTRateLimitError(str(e))
                 ok.append(False)
                 reasons.append(str(e))
         n_failed = ok.count(False)
