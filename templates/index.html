@@ -27,7 +27,6 @@
   <div class="nav-right">
     <button class="conn-pill sp" id="pill-sp" onclick="onPillClick('sp')"><span class="dot"></span><span class="lbl">Spotify: <b id="pill-sp-sub">sin conectar</b></span></button>
     <button class="conn-pill yt" id="pill-yt" onclick="onPillClick('yt')"><span class="dot"></span><span class="lbl">YT Music: <b id="pill-yt-sub">sin conectar</b></span></button>
-    <button class="chip ghost" onclick="openPanel('cfg')" title="Configuración (admin)">⚙</button>
   </div>
 </nav>
 
@@ -196,22 +195,6 @@
 <footer class="site-footer">
   <a href="/privacy">Política de Privacidad</a> · <a href="/terms">Términos del Servicio</a>
 </footer>
-
-<!-- ───────────────────────────── panel config Spotify -->
-<dialog id="panel-cfg">
-  <h3>Credenciales (administrador)</h3>
-  <p class="desc">Spotify: crea una app en <b>developer.spotify.com/dashboard</b> con la Redirect URI exacta.</p>
-  <label for="cfg-id">Spotify Client ID</label><input type="text" id="cfg-id">
-  <label for="cfg-secret">Spotify Client Secret</label><input type="password" id="cfg-secret" placeholder="(sin cambios)">
-  <label for="cfg-redirect">Redirect URI</label><input type="text" id="cfg-redirect">
-  <p class="desc" style="margin-top:14px">Google (login YT Music): cliente OAuth tipo <b>«TV y dispositivos de entrada limitada»</b> con YouTube Data API v3 habilitada. Gratis, sin facturación.</p>
-  <label for="cfg-yt-id">Google Client ID</label><input type="text" id="cfg-yt-id">
-  <label for="cfg-yt-secret">Google Client Secret</label><input type="password" id="cfg-yt-secret" placeholder="(sin cambios)">
-  <div class="dialog-actions">
-    <button class="btn btn-ghost" onclick="closePanel('cfg')">Cancelar</button>
-    <button class="btn btn-sp" onclick="saveConfig(this)"><span class="spinner"></span><span class="btn-label">Guardar</span></button>
-  </div>
-</dialog>
 
 <!-- ───────────────────────────── panel canciones faltantes -->
 <dialog id="panel-missing">

@@ -562,39 +562,6 @@ async function saveYtHeaders(btn) {
   else toast("Headers inválidos: " + esc(res.error || "revisa el formato"), "error", 6000);
 }
 
-async function saveConfig(btn) {
-  if (btn) btn.classList.add("loading");
-  try {
-    await fetch("/api/config", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sp_client_id: $("cfg-id").value,
-        sp_client_secret: $("cfg-secret").value,
-        sp_redirect: $("cfg-redirect").value,
-        yt_client_id: $("cfg-yt-id").value,
-        yt_client_secret: $("cfg-yt-secret").value,
-      }),
-    });
-  } finally {
-    if (btn) btn.classList.remove("loading");
-  }
-  closePanel("cfg");
-  toast("Credenciales guardadas.", "ok");
-}
-
-async function loadConfig() {
-  const ids = ["cfg-id", "cfg-secret", "cfg-redirect", "cfg-yt-id", "cfg-yt-secret"];
-  ids.forEach((id) => $(id).disabled = true);
-  try {
-    const c = await (await fetch("/api/config")).json();
-    $("cfg-id").value = c.sp_client_id;
-    $("cfg-redirect").value = c.sp_redirect;
-    $("cfg-yt-id").value = c.yt_client_id || "";
-  } finally {
-    ids.forEach((id) => $(id).disabled = false);
-  }
-}
-
 async function saveScheduler() {
   await fetch("/api/scheduler", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -606,7 +573,7 @@ async function saveScheduler() {
 }
 
 /* ───────────────────────── helpers */
-function openPanel(n) { if (n === "cfg") loadConfig(); $("panel-" + n).showModal(); }
+function openPanel(n) { $("panel-" + n).showModal(); }
 function closePanel(n) {
   if (n === "yt") clearInterval(ytPollTimer);
   $("panel-" + n).close();

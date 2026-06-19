@@ -263,35 +263,12 @@ def api_scheduler():
     return jsonify({"ok": True})
 
 
-@app.route("/api/config", methods=["GET", "POST"])
-@limiter.limit("10 per minute", methods=["POST"])
-def api_config():
-    if request.method == "POST":
-        data = request.get_json(force=True)
-        for k in ("sp_client_id", "sp_client_secret", "sp_redirect",
-                  "yt_client_id", "yt_client_secret"):
-            if k in data and data[k]:
-                setting_set(k, data[k].strip())
-        return jsonify({"ok": True})
-    return jsonify({
-        "sp_client_id": setting_get("sp_client_id", ""),
-        "sp_redirect": setting_get("sp_redirect",
-                                   os.getenv("SPOTIFY_REDIRECT_URI",
-                                             "http://localhost:5000/callback")),
-        "has_secret": bool(setting_get("sp_client_secret")),
-        "yt_client_id": setting_get("yt_client_id",
-                                    os.getenv("YT_CLIENT_ID", "")),
-        "has_yt_secret": bool(setting_get("yt_client_secret") or
-                              os.getenv("YT_CLIENT_SECRET")),
-    })
-
-
 @app.route("/api/yt/oauth/start", methods=["POST"])
 @limiter.limit("10 per minute")
 def api_yt_oauth_start():
     if not engine.yt_oauth_creds():
         return jsonify({"error": "Google OAuth no configurado. El administrador debe definir "
-                                 "YT_CLIENT_ID y YT_CLIENT_SECRET en ⚙ Config o variables de entorno. "
+                                 "YT_CLIENT_ID y YT_CLIENT_SECRET como variables de entorno en Render. "
                                  "Mientras tanto usa la opción de headers del navegador."}), 400
     try:
         return jsonify(engine.yt_oauth_start(uid()))
